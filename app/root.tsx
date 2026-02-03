@@ -7,6 +7,10 @@ import {
   ScrollRestoration,
 } from "react-router";
 
+import { useEffect } from "react";
+
+import { registerSW } from "virtual:pwa-register";
+
 import type { Route } from "./+types/root";
 import "./app.css";
 
@@ -29,7 +33,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#ffffff" />
         <Meta />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <Links />
       </head>
       <body>
@@ -42,6 +48,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    registerSW({
+      immediate: true,
+      onNeedRefresh() {
+        if (confirm("New content available. Reload?")) {
+          location.reload();
+        }
+      },
+    });
+  }, []);
+
   return <Outlet />;
 }
 
