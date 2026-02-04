@@ -1,173 +1,236 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
-import { AutoPostConfig } from '~/store/useStore';
+import { axiosInstance } from "~/lib/axios";
+import type { AutoPostConfig, Sale, Stock, Product } from "~/store/useStore";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
-const API_BASE = `${BACKEND_URL}/api`;
+/**
+ * Service layer untuk komunikasi dengan Backendless.
+ *
+ * BASE URL (lihat `lib/axios.ts`):
+ * - VITE_BACKENDLESS_API_URL = https://hotshotfinger-us.backendless.app
+ *
+ * Endpoint yang digunakan di sini:
+ * - GET  /api/data/stock
+ * - PUT  /api/data/stock/{objectId}
+ * - GET  /api/data/products
+ * - GET  /api/data/Sales?loadRelations=product
+ * - POST /api/data/Sales
+ *
+ * Catatan:
+ * - Struktur yang dikembalikan dari Backendless akan di-normalisasi ke
+ *   interface `Sale`, `Stock`, dan `Product` yang dipakai front-end.
+ */
 
-// Types
-interface AuthResponse {
-  success: boolean;
-  token: string;
+// ========================
+// Backendless types
+// ========================
+
+interface BackendlessStock {
+  objectId: string;
+  rawChicken: number;
+  friedPlanning: number;
+  cookedChicken?: number;
 }
 
-interface Credentials {
-  username: string;
-  password: string;
+interface BackendlessProduct {
+  objectId: string;
+  code: string;
+  name: string;
+  price: number;
+  isActive: boolean;
+  useChicken?: boolean;
 }
 
-interface SaleData {
-  productId: string;
+interface BackendlessSale {
+  objectId: string;
+  productId?: string;
+  productName?: string;
+  price?: number;
+  quantity?: number;
+  qty?: number;
+  quantitiy?: number; // antisipasi typo
+  total?: number;
+  transactionDate?: number;
+  created?: number;
+  product?: BackendlessProduct;
+}
+
+// ========================
+// Helper mappers
+// ========================
+
+const mapStock = (s: BackendlessStock): Stock => ({
+  rawChicken: s.rawChicken ?? 0,
+  friedPlanning: s.friedPlanning ?? 0,
+  cookedChicken: s.cookedChicken ?? 0,
+});
+
+const mapProduct = (p: BackendlessProduct): Product => ({
+  id: p.objectId,
+  name: p.name,
+  price: p.price,
+  code: p.code,
+  useChicken: p.useChicken ?? false,
+});
+
+const mapSale = (s: BackendlessSale): Sale => {
+  const quantity: number =
+    (s.quantity as number | undefined) ??
+    (s.qty as number | undefined) ??
+    (s.quantitiy as number | undefined) ??
+    0;
+  const product = s.product;
+
+  return {
+    id: s.objectId,
+    productId: product?.objectId ?? s.productId ?? "",
+    productName: product?.name ?? s.productName ?? "",
+    price: product?.price ?? s.price ?? 0,
+    quantity,
+    total: s.total ?? (product?.price ?? s.price ?? 0) * quantity,
+    date: new Date(s.transactionDate ?? s.created ?? Date.now()).toISOString(),
+  };
+};
+
+// ========================
+// Products API
+// ========================
+
+export const productsAPI = {
+  async list(): Promise<Product[]> {
+    const { data } = await axiosInstance.get<BackendlessProduct[]>(
+      "/api/data/products",
+      {
+        params: {
+          sortBy: "`price` desc",
+        },
+      },
+    );
+    return data.filter((p) => p.isActive !== false).map(mapProduct);
+  },
+};
+
+// ========================
+// Sales API
+// ========================
+
+export interface CreateSaleDto {
+  productId: string; // objectId dari products
   productName: string;
   price: number;
   quantity: number;
 }
 
-interface StockData {
-  rawChicken?: number;
-  friedPlanning?: number;
-}
-
-interface ApiResponse<T = unknown> {
-  data: T;
-  message?: string;
-}
-
-// Create axios instance with default config
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor for adding auth token if needed
-apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error: AxiosError) => Promise.reject(error)
-);
-
-// Response interceptor for error handling
-apiClient.interceptors.response.use(
-  (response: AxiosResponse) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
-// Auto Post API
-export const autoPostAPI = {
-  getConfig: async (): Promise<AutoPostConfig> => {
-    try {
-      const response = await apiClient.get<AutoPostConfig>('/config');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch config:', error);
-      throw error;
-    }
-  },
-
-  start: async (config: AutoPostConfig): Promise<ApiResponse> => {
-    try {
-      const response = await apiClient.post<ApiResponse>('/autopost/start', config);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to start auto post:', error);
-      throw error;
-    }
-  },
-
-  stop: async (): Promise<ApiResponse> => {
-    try {
-      const response = await apiClient.post<ApiResponse>('/autopost/stop');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to stop auto post:', error);
-      throw error;
-    }
-  },
-};
-
-// Sales API
 export const salesAPI = {
-  getList: async (): Promise<SaleData[]> => {
-    try {
-      const response = await apiClient.get<SaleData[]>('/sales/list');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch sales:', error);
-      throw error;
-    }
+  async list(): Promise<Sale[]> {
+    const { data } =
+      await axiosInstance.get<BackendlessSale[]>("/api/data/Sales");
+    return data.map(mapSale);
   },
 
-  add: async (sale: SaleData): Promise<ApiResponse> => {
-    try {
-      const response = await apiClient.post<ApiResponse>('/sales/add', sale);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to add sale:', error);
-      throw error;
-    }
+  async create(payload: CreateSaleDto): Promise<Sale> {
+    const now = Date.now();
+
+    const body = {
+      productId: payload.productId,
+      productName: payload.productName,
+      price: payload.price,
+      quantity: payload.quantity,
+      total: payload.price * payload.quantity,
+      transactionDate: now,
+      // Jika Backendless menggunakan relasi satu-ke-banyak 'product'
+      product: {
+        objectId: payload.productId,
+      },
+    };
+
+    const { data } = await axiosInstance.post<BackendlessSale>(
+      "/api/data/Sales",
+      body,
+    );
+    return mapSale(data);
+  },
+
+  async delete(id: string): Promise<void> {
+    await axiosInstance.delete(`/api/data/Sales/${id}`);
   },
 };
 
+// ========================
 // Stock API
+// ========================
+
 export const stockAPI = {
-  get: async (): Promise<StockData> => {
-    try {
-      const response = await apiClient.get<StockData>('/stock');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch stock:', error);
-      throw error;
+  async get(): Promise<Stock> {
+    const { data } =
+      await axiosInstance.get<BackendlessStock[]>("/api/data/stock");
+    const first = data[0] as BackendlessStock | undefined;
+    if (!first) {
+      // Jika belum ada record, anggap 0 semua
+      return { rawChicken: 0, friedPlanning: 0, cookedChicken: 0 };
     }
+    return mapStock(first);
   },
 
-  update: async (stockData: StockData): Promise<ApiResponse> => {
-    try {
-      const response = await apiClient.post<ApiResponse>('/stock/update', stockData);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to update stock:', error);
-      throw error;
+  async update(stock: Partial<Stock>): Promise<Stock> {
+    // Ambil record pertama lalu update
+    const { data } =
+      await axiosInstance.get<BackendlessStock[]>("/api/data/stock");
+    const current = data[0] as BackendlessStock | undefined;
+
+    if (!current) {
+      // Jika belum ada, buat baru dengan POST
+      const createBody = {
+        rawChicken: stock.rawChicken ?? 0,
+        friedPlanning: stock.friedPlanning ?? 0,
+        cookedChicken: stock.cookedChicken ?? 0,
+      };
+      const { data: created } = await axiosInstance.post<BackendlessStock>(
+        "/api/data/stock",
+        createBody,
+      );
+      return mapStock(created);
     }
+
+    const updateBody = {
+      ...current,
+      ...stock,
+    };
+
+    const { data: updated } = await axiosInstance.put<BackendlessStock>(
+      `/api/data/stock/${current.objectId}`,
+      updateBody,
+    );
+
+    return mapStock(updated);
   },
 };
 
-// Auth API (mock for now)
-export const authAPI = {
-  login: async (credentials: Credentials): Promise<AuthResponse> => {
-    // Mock login - in production this would call the backend
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (credentials.username === 'admin' && credentials.password === 'admin123') {
-          const token = 'mock_token_' + Date.now();
-          localStorage.setItem('auth_token', token);
-          resolve({ success: true, token });
-        } else {
-          reject(new Error('Username atau password salah'));
-        }
-      }, 500);
-    });
+// ========================
+// Auto Post API (masih generic)
+// ========================
+
+export interface AutoPostStatusResponse {
+  status: "RUNNING" | "STOPPED";
+  config: AutoPostConfig;
+}
+
+export const autoPostAPI = {
+  async getConfig(): Promise<AutoPostConfig> {
+    const { data } =
+      await axiosInstance.get<AutoPostConfig>("/autopost/config");
+    return data;
   },
 
-  logout: (): void => {
-    localStorage.removeItem('auth_token');
+  async start(config: AutoPostConfig): Promise<AutoPostStatusResponse> {
+    const { data } = await axiosInstance.post<AutoPostStatusResponse>(
+      "/autopost/start",
+      config,
+    );
+    return data;
   },
 
-  isAuthenticated: (): boolean => {
-    return !!localStorage.getItem('auth_token');
+  async stop(): Promise<AutoPostStatusResponse> {
+    const { data } =
+      await axiosInstance.post<AutoPostStatusResponse>("/autopost/stop");
+    return data;
   },
 };
-
-export default apiClient;

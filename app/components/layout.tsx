@@ -1,10 +1,15 @@
-import { Outlet, Navigate } from 'react-router';
-import { Navbar } from '~/components/navbar';
-import useStore from '~/store/useStore';
-import { Toaster } from '~/components/ui/sonner';
+import { Outlet, Navigate } from "react-router";
+import { Navbar } from "~/components/navbar";
+import { Toaster } from "~/components/ui/sonner";
+import { useAuthStore } from "~/modules/auth/auth.store";
 
 export const Layout = () => {
-  const { isAuthenticated } = useStore();
+  const { isAuthenticated, hasHydrated } = useAuthStore();
+
+  // Tunggu sampai Zustand rehydrate dari localStorage
+  if (!hasHydrated) {
+    return null;
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -13,7 +18,7 @@ export const Layout = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       {/* Main Content */}
       <main className="lg:ml-64 min-h-screen">
         {/* Top padding for mobile header */}
@@ -23,7 +28,7 @@ export const Layout = () => {
           </div>
         </div>
       </main>
-      
+
       <Toaster position="top-right" richColors closeButton />
     </div>
   );

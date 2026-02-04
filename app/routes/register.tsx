@@ -13,23 +13,24 @@ import {
 } from "~/components/ui/card";
 import { toast } from "sonner";
 import { useAuthStore } from "~/modules/auth/auth.store";
-import { loginSchema } from "~/modules/auth/auth.schema";
+import { registerSchema } from "~/modules/auth/auth.schema";
 
-const Login = () => {
+const Register = () => {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuthStore();
+  const { register } = useAuthStore();
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const parsed = loginSchema.safeParse({ email, password });
+    const parsed = registerSchema.safeParse({ name, email, password });
     if (!parsed.success) {
       const firstError =
-        parsed.error.issues[0]?.message || "Data login tidak valid";
+        parsed.error.issues[0]?.message || "Data registrasi tidak valid";
       toast.error(firstError);
       return;
     }
@@ -37,17 +38,18 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      await login(parsed.data);
-      toast.success("Login berhasil!", {
-        description: "Selamat datang di Dashboard Ayam Geprek Sriwedari",
+      await register(parsed.data);
+      toast.success("Registrasi berhasil!", {
+        description: "Akun berhasil dibuat, silakan login terlebih dahulu",
       });
-      navigate("/");
+      // Setelah register, arahkan ke halaman login
+      navigate("/login");
     } catch (error: any) {
       const message =
         error?.response?.data?.message ||
         error?.message ||
-        "Email atau password salah";
-      toast.error("Login gagal", {
+        "Terjadi kesalahan saat registrasi";
+      toast.error("Registrasi gagal", {
         description: message,
       });
     } finally {
@@ -76,7 +78,7 @@ const Login = () => {
       <div className="absolute top-20 left-20 w-72 h-72 rounded-full bg-primary/10 blur-3xl" />
       <div className="absolute bottom-20 right-20 w-96 h-96 rounded-full bg-secondary/10 blur-3xl" />
 
-      {/* Login Card */}
+      {/* Register Card */}
       <div className="relative z-10 w-full max-w-md mx-4 animate-scale-in">
         <Card className="glass-card border-0 shadow-lg">
           <CardHeader className="text-center pb-2">
@@ -86,15 +88,32 @@ const Login = () => {
             </div>
 
             <CardTitle className="text-2xl font-heading font-bold text-foreground">
-              Ayam Geprek Sriwedari
+              Buat Akun Baru
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              Masuk ke Control Panel
+              Daftar untuk mengakses Control Panel
             </CardDescription>
           </CardHeader>
 
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-foreground">
+                  Nama Lengkap
+                </Label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Masukkan nama lengkap"
+                  value={name}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setName(e.target.value)
+                  }
+                  className="h-11 bg-background/50 border-border focus:border-primary transition-colors"
+                  disabled={isLoading}
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-foreground">
                   Email
@@ -153,19 +172,19 @@ const Login = () => {
                     Memproses...
                   </>
                 ) : (
-                  "Masuk"
+                  "Daftar"
                 )}
               </Button>
             </form>
 
             <div className="mt-6 p-3 rounded-lg bg-muted/50 border border-border">
               <p className="text-xs text-center text-muted-foreground">
-                Belum punya akun?{" "}
+                Sudah punya akun?{" "}
                 <Link
-                  to="/register"
+                  to="/login"
                   className="font-medium text-primary hover:underline"
                 >
-                  Daftar sekarang
+                  Masuk di sini
                 </Link>
               </p>
             </div>
@@ -181,4 +200,5 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Register;
+

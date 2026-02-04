@@ -1,19 +1,19 @@
-import { useState } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router';
-import { 
-  LayoutDashboard, 
-  Send, 
-  ShoppingCart, 
-  Package, 
-  LogOut, 
-  Menu, 
+import { useState } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router";
+import {
+  LayoutDashboard,
+  Send,
+  ShoppingCart,
+  Package,
+  LogOut,
+  Menu,
   X,
   ChefHat,
-  LucideIcon
-} from 'lucide-react';
-import { Button } from '~/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '~/components/ui/sheet';
-import useStore from '~/store/useStore';
+  LucideIcon,
+} from "lucide-react";
+import { Button } from "~/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
+import { useAuthStore } from "~/modules/auth/auth.store";
 
 interface NavItem {
   path: string;
@@ -22,10 +22,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/autopost', label: 'Auto Post', icon: Send },
-  { path: '/sales', label: 'Penjualan', icon: ShoppingCart },
-  { path: '/stock', label: 'Stok', icon: Package },
+  { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/autopost", label: "Auto Post", icon: Send },
+  { path: "/sales", label: "Penjualan", icon: ShoppingCart },
+  { path: "/stock", label: "Stok", icon: Package },
 ];
 
 interface NavContentProps {
@@ -36,11 +36,11 @@ export const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useStore();
+  const { user, logout } = useAuthStore();
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   const NavContent = ({ onItemClick }: NavContentProps) => (
@@ -85,12 +85,12 @@ export const Navbar = () => {
         <div className="flex items-center gap-3 mb-4 px-2">
           <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
             <span className="text-sm font-medium text-primary">
-              {user?.username?.charAt(0)?.toUpperCase() || 'A'}
+              {user?.name?.charAt(0)?.toUpperCase() || "A"}
             </span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
-              {user?.username || 'Admin'}
+              {user?.name || "Admin"}
             </p>
             <p className="text-xs text-muted-foreground">Administrator</p>
           </div>

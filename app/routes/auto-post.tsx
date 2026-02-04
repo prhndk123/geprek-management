@@ -1,29 +1,55 @@
-import { useState, ChangeEvent, FormEvent } from 'react';
-import { 
-  Send, 
-  Play, 
-  Square, 
-  Clock, 
+import { useEffect, useState, ChangeEvent } from "react";
+import {
+  Send,
+  Play,
+  Square,
+  Clock,
   Link as LinkIcon,
   MessageSquare,
   Timer,
   Loader2,
-  AlertCircle
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
-import { Textarea } from '~/components/ui/textarea';
-import { Label } from '~/components/ui/label';
-import { StatusBadge, StatusDot } from '~/components/status-badge';
-import { Alert, AlertDescription } from '~/components/ui/alert';
-import useStore from '~/store/useStore';
-import { toast } from 'sonner';
+  AlertCircle,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
+import { Label } from "~/components/ui/label";
+import { StatusBadge, StatusDot } from "~/components/status-badge";
+import { Alert, AlertDescription } from "~/components/ui/alert";
+import useStore from "~/store/useStore";
+import { toast } from "sonner";
+import { autoPostAPI } from "~/services/api";
 
 const AutoPost = () => {
-  const { autoPostConfig, setAutoPostConfig, autoPostStatus, setAutoPostStatus } = useStore();
+  const { autoPostConfig, setAutoPostConfig, autoPostStatus, setAutoPostStatus } =
+    useStore();
   const [isLoading, setIsLoading] = useState(false);
-  const [action, setAction] = useState<'start' | 'stop' | null>(null);
+  const [action, setAction] = useState<"start" | "stop" | null>(null);
+
+  // Ambil konfigurasi awal dari backend
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const config = await autoPostAPI.getConfig();
+        setAutoPostConfig(config);
+      } catch (error: any) {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Gagal memuat konfigurasi auto post";
+        toast.error(message);
+      }
+    };
+
+    fetchConfig();
+  }, [setAutoPostConfig]);
 
   const handleConfigChange = (field: string, value: string | number) => {
     setAutoPostConfig({ [field]: value });
@@ -45,32 +71,48 @@ const AutoPost = () => {
     }
 
     setIsLoading(true);
-    setAction('start');
+    setAction("start");
 
-    // Simulate API call
-    setTimeout(() => {
-      setAutoPostStatus('RUNNING');
-      toast.success('Auto Post dimulai!', {
-        description: 'Bot akan mulai mengirim postingan sesuai jadwal',
+    try {
+      const result = await autoPostAPI.start(autoPostConfig);
+      setAutoPostStatus(result.status);
+      setAutoPostConfig(result.config);
+      toast.success("Auto Post dimulai!", {
+        description: "Bot akan mulai mengirim postingan sesuai jadwal",
       });
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Gagal memulai auto post";
+      toast.error(message);
+    } finally {
       setIsLoading(false);
       setAction(null);
-    }, 1000);
+    }
   };
 
   const handleStop = async () => {
     setIsLoading(true);
-    setAction('stop');
+    setAction("stop");
 
-    // Simulate API call
-    setTimeout(() => {
-      setAutoPostStatus('STOPPED');
-      toast.success('Auto Post dihentikan', {
-        description: 'Bot tidak akan mengirim postingan lagi',
+    try {
+      const result = await autoPostAPI.stop();
+      setAutoPostStatus(result.status);
+      setAutoPostConfig(result.config);
+      toast.success("Auto Post dihentikan", {
+        description: "Bot tidak akan mengirim postingan lagi",
       });
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Gagal menghentikan auto post";
+      toast.error(message);
+    } finally {
       setIsLoading(false);
       setAction(null);
-    }, 1000);
+    }
   };
 
   const isRunning = autoPostStatus === 'RUNNING';
@@ -141,10 +183,22 @@ const AutoPost = () => {
               <Input
                 id="interval"
                 type="number"
+                inputMode="numeric"
                 min={10}
                 max={3600}
                 value={autoPostConfig.interval}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => handleConfigChange('interval', parseInt(e.target.value) || 60)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  const value = e.target.value;
+                  if (value === "") {
+                    // izinkan kosong di UI, tapi jangan langsung set ke state
+                    handleConfigChange("interval", 0);
+                    return;
+                  }
+                  const parsed = Number(value);
+                  if (!Number.isNaN(parsed)) {
+                    handleConfigChange("interval", parsed);
+                  }
+                }}
                 className="bg-background"
                 disabled={isRunning}
               />
