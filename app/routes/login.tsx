@@ -78,7 +78,7 @@ const Login = () => {
 
       {/* Login Card */}
       <div className="relative z-10 w-full max-w-md mx-4 animate-scale-in">
-        <Card className="glass-card border-0 shadow-lg">
+        <Card className="bg-white border-0 shadow-2xl">
           <CardHeader className="text-center pb-2">
             {/* Logo */}
             <div className="mx-auto mb-4 w-20 h-20 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-glow">
@@ -88,7 +88,7 @@ const Login = () => {
             <CardTitle className="text-2xl font-heading font-bold text-foreground">
               Ayam Geprek Sriwedari
             </CardTitle>
-            <CardDescription className="text-muted-foreground">
+            <CardDescription className="text-foreground/70 font-medium">
               Masuk ke Control Panel
             </CardDescription>
           </CardHeader>
@@ -107,7 +107,7 @@ const Login = () => {
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setEmail(e.target.value)
                   }
-                  className="h-11 bg-background/50 border-border focus:border-primary transition-colors"
+                  className="h-11 bg-white border-border focus:border-primary text-foreground font-medium transition-colors"
                   disabled={isLoading}
                 />
               </div>
@@ -125,7 +125,7 @@ const Login = () => {
                     onChange={(e: ChangeEvent<HTMLInputElement>) =>
                       setPassword(e.target.value)
                     }
-                    className="h-11 bg-background/50 border-border focus:border-primary transition-colors pr-10"
+                    className="h-11 bg-white border-border focus:border-primary text-foreground font-medium transition-colors pr-10"
                     disabled={isLoading}
                   />
                   <button
@@ -158,8 +158,8 @@ const Login = () => {
               </Button>
             </form>
 
-            <div className="mt-6 p-3 rounded-lg bg-muted/50 border border-border">
-              <p className="text-xs text-center text-muted-foreground">
+            <div className="mt-6 p-3 rounded-lg bg-primary/5 border border-primary/10">
+              <p className="text-xs text-center text-foreground/70">
                 Belum punya akun?{" "}
                 <Link
                   to="/register"
@@ -173,8 +173,9 @@ const Login = () => {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          &copy; 2024 Ayam Geprek Sriwedari. All rights reserved.
+        <p className="text-center text-xs text-foreground/60 font-medium mt-6">
+          &copy; {new Date().getFullYear()} Ayam Geprek Sriwedari. All rights
+          reserved.
         </p>
       </div>
     </div>
