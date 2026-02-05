@@ -12,6 +12,8 @@ import {
   ArrowDown,
   ArrowUpDown,
   ListFilter,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   Card,
@@ -60,6 +62,7 @@ import {
 import { toast } from "sonner";
 import { productsAPI, salesAPI, stockAPI } from "~/services/api";
 import { cn } from "~/lib/utils";
+import { Skeleton } from "~/components/ui/skeleton";
 
 const Sales = () => {
   const {
@@ -86,6 +89,24 @@ const Sales = () => {
   const [sortBy, setBy] = useState<"date" | "total">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
+  // Pagination & Fetching state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isFetching, setIsFetching] = useState(false);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+  const itemsPerPage = 10;
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
   // Sync local state when global store changes
   useEffect(() => {
     setSales(cachedSales);
@@ -102,20 +123,79 @@ const Sales = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [productsData, salesData] = await Promise.all([
-          productsAPI.list(),
-          salesAPI.list(),
-        ]);
+        const productsData = await productsAPI.list();
         setProductsState(productsData);
-        setSales(salesData);
         setProducts(productsData);
-        setGlobalSales(salesData);
       } catch (error: any) {
-        toast.error("Gagal memuat data penjualan");
+        toast.error("Gagal memuat data produk");
       }
     };
     fetchData();
-  }, [setProducts, setGlobalSales]);
+  }, [setProducts]);
+
+  // Fetch sales whenever pagination or filters change
+  useEffect(() => {
+    const fetchSalesData = async () => {
+      setIsFetching(true);
+      try {
+        // Build where clause for Backendless
+        let where: string | undefined;
+        if (viewMode === "month") {
+          const start = new Date(filterYear, filterMonth, 1).getTime();
+          const end = new Date(
+            filterYear,
+            filterMonth + 1,
+            0,
+            23,
+            59,
+            59,
+          ).getTime();
+          where = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        } else if (viewMode === "year") {
+          const start = new Date(filterYear, 0, 1).getTime();
+          const end = new Date(filterYear, 11, 31, 23, 59, 59).getTime();
+          where = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        }
+
+        if (debouncedSearchQuery) {
+          const searchClause = `productName LIKE '%${debouncedSearchQuery}%'`;
+          where = where ? `(${where}) AND ${searchClause}` : searchClause;
+        }
+
+        // Summary mode fetches all for the period to group client-side
+        // Detail mode fetches with pagination
+        const offset = (currentPage - 1) * itemsPerPage;
+        const limit = displayMode === "summary" ? 366 : itemsPerPage;
+
+        const [salesData, countData] = await Promise.all([
+          salesAPI.list(displayMode === "summary" ? 0 : offset, limit, where),
+          salesAPI.count(where),
+        ]);
+
+        setSales(salesData);
+        setTotalCount(countData);
+        if (displayMode === "detail" && currentPage === 1) {
+          // Update global cache only for full page 1 or when necessary
+          // For now, let's just sync the fetched sales
+          setGlobalSales(salesData);
+        }
+      } catch (error: any) {
+        toast.error("Gagal memuat data penjualan");
+      } finally {
+        setIsFetching(false);
+      }
+    };
+
+    fetchSalesData();
+  }, [
+    currentPage,
+    viewMode,
+    filterMonth,
+    filterYear,
+    displayMode,
+    debouncedSearchQuery,
+    setGlobalSales,
+  ]);
 
   // Filter & Sort Logic
   const processedSales = (() => {
@@ -173,6 +253,35 @@ const Sales = () => {
       }
     });
   })();
+
+  // Calculate paginated sales
+  // If displayMode is detail, sales are already paginated from server
+  // If displayMode is summary, we paginate the grouped result client-side
+  const processedToDisplay =
+    displayMode === "summary"
+      ? processedSales.slice(
+          (currentPage - 1) * itemsPerPage,
+          currentPage * itemsPerPage,
+        )
+      : processedSales;
+
+  const totalPages =
+    displayMode === "summary"
+      ? Math.ceil(processedSales.length / itemsPerPage)
+      : Math.ceil(totalCount / itemsPerPage);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    viewMode,
+    filterMonth,
+    filterYear,
+    displayMode,
+    searchQuery,
+    sortBy,
+    sortOrder,
+  ]);
 
   const handleAddSale = async () => {
     if (!selectedProduct) {
@@ -489,7 +598,8 @@ const Sales = () => {
                 Riwayat Penjualan
               </CardTitle>
               <CardDescription>
-                {processedSales.length} baris ditampilkan
+                {displayMode === "summary" ? processedSales.length : totalCount}{" "}
+                baris ditemukan (Hal {currentPage} dari {totalPages || 1})
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -596,81 +706,170 @@ const Sales = () => {
                           </div>
                         </TableHead>
                         {displayMode === "detail" && (
-                          <TableHead className="text-xs font-bold text-center">
+                          <TableHead className="text-xs font-bold text-center w-12">
                             Aksi
                           </TableHead>
                         )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {processedSales.map((sale) => (
-                        <TableRow
-                          key={sale.id}
-                          className={cn(
-                            "group transition-colors",
-                            (sale as any).isSummary
-                              ? "bg-primary/5 font-semibold"
-                              : "hover:bg-muted/30",
-                          )}
-                        >
-                          <TableCell className="text-xs text-muted-foreground py-3">
-                            {formatDate(sale.date)}
-                          </TableCell>
-                          <TableCell className="text-sm py-3">
-                            {sale.productName}
-                          </TableCell>
-                          <TableCell className="text-sm text-center font-bold py-3">
-                            {sale.quantity}
-                          </TableCell>
-                          {displayMode === "detail" && (
-                            <TableCell className="text-sm text-center text-muted-foreground py-3">
-                              {formatRupiah(sale.price)}
-                            </TableCell>
-                          )}
-                          <TableCell className="text-sm text-center font-bold text-primary py-3">
-                            {formatRupiah(sale.total)}
-                          </TableCell>
-                          {displayMode === "detail" && (
-                            <TableCell className="text-sm text-center py-3">
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                                    disabled={isDeleting === sale.id}
-                                  >
-                                    {isDeleting === sale.id ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="w-4 h-4" />
-                                    )}
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>
-                                      Hapus Transaksi?
-                                    </AlertDialogTitle>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Batal</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => commitDeleteSale(sale.id)}
-                                      className="bg-destructive text-white hover:bg-destructive/90"
-                                    >
-                                      Hapus
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
+                      {isFetching
+                        ? Array.from({ length: 5 }).map((_, i) => (
+                            <TableRow key={`skeleton-${i}`}>
+                              <TableCell>
+                                <Skeleton className="h-4 w-20" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-32" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-8 mx-auto" />
+                              </TableCell>
+                              {displayMode === "detail" && (
+                                <TableCell>
+                                  <Skeleton className="h-4 w-20 mx-auto" />
+                                </TableCell>
+                              )}
+                              <TableCell>
+                                <Skeleton className="h-4 w-24 mx-auto" />
+                              </TableCell>
+                              {displayMode === "detail" && (
+                                <TableCell>
+                                  <Skeleton className="h-8 w-8 mx-auto rounded-full" />
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))
+                        : processedToDisplay.map((sale) => (
+                            <TableRow
+                              key={sale.id}
+                              className={cn(
+                                "group transition-colors",
+                                (sale as any).isSummary
+                                  ? "bg-primary/5 font-semibold"
+                                  : "hover:bg-muted/30",
+                              )}
+                            >
+                              <TableCell className="text-xs text-muted-foreground py-3">
+                                {formatDate(sale.date)}
+                              </TableCell>
+                              <TableCell className="text-sm py-3">
+                                {sale.productName}
+                              </TableCell>
+                              <TableCell className="text-sm text-center font-bold py-3">
+                                {sale.quantity}
+                              </TableCell>
+                              {displayMode === "detail" && (
+                                <TableCell className="text-sm text-center text-muted-foreground py-3">
+                                  {formatRupiah(sale.price)}
+                                </TableCell>
+                              )}
+                              <TableCell className="text-sm text-center font-bold text-primary py-3">
+                                {formatRupiah(sale.total)}
+                              </TableCell>
+                              {displayMode === "detail" && (
+                                <TableCell className="text-sm text-center py-3">
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                                        disabled={isDeleting === sale.id}
+                                      >
+                                        {isDeleting === sale.id ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="w-4 h-4" />
+                                        )}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                          Hapus Transaksi?
+                                        </AlertDialogTitle>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>
+                                          Batal
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() =>
+                                            commitDeleteSale(sale.id)
+                                          }
+                                          className="bg-destructive text-white hover:bg-destructive/90"
+                                        >
+                                          Hapus
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
                     </TableBody>
                   </Table>
                 </div>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-lg h-9 px-2 sm:px-4"
+                >
+                  <ChevronLeft className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Sebelumnya</span>
+                </Button>
+
+                <div className="flex items-center gap-1 sm:order-0 justify-center">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={
+                          currentPage === pageNum ? "default" : "outline"
+                        }
+                        size="icon-sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="rounded-lg h-9 px-2 sm:px-4"
+                >
+                  <span className="hidden sm:inline">Berikutnya</span>
+                  <ChevronRight className="w-4 h-4 sm:ml-1" />
+                </Button>
               </div>
             )}
           </CardContent>

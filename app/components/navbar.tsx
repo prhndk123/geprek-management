@@ -53,7 +53,7 @@ export const Navbar = () => {
 
             <div className="relative w-12 h-12 rounded-2xl bg-white border border-border flex items-center justify-center overflow-hidden shadow-sm">
               <img
-                src="/icons/icon.png"
+                src="/icons/icon-app.png"
                 alt="Logo Ayam Geprek Sriwedari"
                 className="w-10 h-10 object-contain transform group-hover:scale-110 transition-transform duration-300"
               />
@@ -130,7 +130,7 @@ export const Navbar = () => {
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-white border border-border flex items-center justify-center overflow-hidden shadow-sm">
               <img
-                src="/icons/icon.png"
+                src="/icons/icon-app.png"
                 alt="Logo"
                 className="w-7 h-7 object-contain"
               />

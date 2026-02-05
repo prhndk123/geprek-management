@@ -120,10 +120,26 @@ export interface CreateSaleDto {
 }
 
 export const salesAPI = {
-  async list(): Promise<Sale[]> {
-    const { data } =
-      await axiosInstance.get<BackendlessSale[]>("/api/data/Sales");
+  async list(offset = 0, pageSize = 10, where?: string): Promise<Sale[]> {
+    const { data } = await axiosInstance.get<BackendlessSale[]>(
+      "/api/data/Sales",
+      {
+        params: {
+          pageSize,
+          offset,
+          where,
+          sortBy: "transactionDate desc, created desc",
+        },
+      },
+    );
     return data.map(mapSale);
+  },
+
+  async count(where?: string): Promise<number> {
+    const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
+      params: { where },
+    });
+    return data;
   },
 
   async create(payload: CreateSaleDto): Promise<Sale> {
