@@ -14,6 +14,16 @@ import { registerSW } from "virtual:pwa-register";
 import type { Route } from "./+types/root";
 import "./app.css";
 
+export const meta: Route.MetaFunction = () => [
+  { title: "Ayam Geprek Sriwedari - Management System" },
+  {
+    name: "description",
+    content:
+      "Sistem Manajemen Penjualan dan Stok Ayam Geprek Sriwedari yang modern dan efisien.",
+  },
+  { name: "author", content: "Ayam Geprek Sriwedari" },
+];
+
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
@@ -23,17 +33,22 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Outfit:wght@400;600;700;800&display=swap",
   },
+  { rel: "icon", type: "image/png", href: "/icons/icon.png" },
+  { rel: "apple-touch-icon", href: "/icons/icon.png" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="id" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#ffffff" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"
+        />
+        <meta name="theme-color" content="#f97316" />
         <Meta />
         <link rel="manifest" href="/manifest.webmanifest" />
         <Links />

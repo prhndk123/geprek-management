@@ -41,29 +41,51 @@ const Dashboard = () => {
   } = useStore();
   const { user } = useAuthStore();
 
-  // Helper to calculate stats from a sales list
-  const calculateStats = (salesList: Sale[]) => {
-    const today = new Date().toDateString();
-    const todaySalesList = salesList.filter(
-      (sale) => new Date(sale.date).toDateString() === today,
-    );
-    const todaySalesTotal = todaySalesList.reduce(
-      (sum, sale) => sum + sale.total,
-      0,
-    );
-    const itemsSoldTotal = todaySalesList.reduce(
-      (sum, sale) => sum + sale.quantity,
-      0,
-    );
+  const calculateStats = (
+    salesList: Sale[],
+    range: "today" | "month" | "year" | "all" = "today",
+    month?: number,
+    year?: number,
+  ) => {
+    const now = new Date();
+    const targetMonth = month ?? now.getMonth();
+    const targetYear = year ?? now.getFullYear();
+
+    const filtered = salesList.filter((sale) => {
+      const saleDate = new Date(sale.date);
+      if (range === "today") {
+        return saleDate.toDateString() === now.toDateString();
+      }
+      if (range === "month") {
+        return (
+          saleDate.getMonth() === targetMonth &&
+          saleDate.getFullYear() === targetYear
+        );
+      }
+      if (range === "year") {
+        return saleDate.getFullYear() === targetYear;
+      }
+      return true; // all
+    });
+
+    const totalSales = filtered.reduce((sum, sale) => sum + sale.total, 0);
+    const totalItems = filtered.reduce((sum, sale) => sum + sale.quantity, 0);
+
     return {
-      todaySales: todaySalesTotal,
-      itemsSold: itemsSoldTotal,
-      totalTransactions: salesList.length,
+      todaySales: totalSales,
+      itemsSold: totalItems,
+      totalTransactions: filtered.length,
     };
   };
 
+  const [viewMode, setViewMode] = useState<"today" | "month" | "year" | "all">(
+    "today",
+  );
+  const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+
   // Initial stats from cache
-  const initialCalculated = calculateStats(cachedSales);
+  const initialCalculated = calculateStats(cachedSales, "today");
   const [stats, setStats] = useState({
     todaySales: initialCalculated.todaySales,
     itemsSold: initialCalculated.itemsSold,
@@ -72,6 +94,25 @@ const Dashboard = () => {
     cookedChicken: cachedStock.cookedChicken,
     totalTransactions: initialCalculated.totalTransactions,
   });
+
+  // Calculate stats whenever sales or filter changes
+  useEffect(() => {
+    const newStats = calculateStats(
+      cachedSales,
+      viewMode,
+      filterMonth,
+      filterYear,
+    );
+    setStats((prev) => ({
+      ...prev,
+      todaySales: newStats.todaySales,
+      itemsSold: newStats.itemsSold,
+      totalTransactions: newStats.totalTransactions,
+      rawChicken: cachedStock.rawChicken,
+      friedPlanning: cachedStock.friedPlanning,
+      cookedChicken: cachedStock.cookedChicken,
+    }));
+  }, [cachedSales, cachedStock, viewMode, filterMonth, filterYear]);
 
   // Update time every second
   useEffect(() => {
@@ -93,16 +134,6 @@ const Dashboard = () => {
         // Sync to global store (cache)
         setSales(salesData);
         setStock(stockData);
-
-        const newStats = calculateStats(salesData);
-        setStats({
-          todaySales: newStats.todaySales,
-          itemsSold: newStats.itemsSold,
-          rawChicken: stockData.rawChicken,
-          friedPlanning: stockData.friedPlanning,
-          cookedChicken: stockData.cookedChicken,
-          totalTransactions: newStats.totalTransactions,
-        });
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       }
@@ -130,6 +161,26 @@ const Dashboard = () => {
     if (hour < 19) return "Selamat Sore";
     return "Selamat Malam";
   };
+
+  const months = [
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
+  ];
+
+  const years = Array.from(
+    { length: 5 },
+    (_, i) => new Date().getFullYear() - i,
+  );
 
   return (
     <div className="space-y-6 animate-fade-in pb-8">
@@ -162,6 +213,92 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Filter Bar */}
+      <Card className="premium-card bg-muted/30 border-none shadow-none">
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
+              <Button
+                variant={viewMode === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("today")}
+                className="rounded-full px-4"
+              >
+                Hari Ini
+              </Button>
+              <Button
+                variant={viewMode === "month" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("month")}
+                className="rounded-full px-4"
+              >
+                Bulan Ini
+              </Button>
+              <Button
+                variant={viewMode === "year" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("year")}
+                className="rounded-full px-4"
+              >
+                Tahun Ini
+              </Button>
+              <Button
+                variant={viewMode === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("all")}
+                className="rounded-full px-4"
+              >
+                Semua
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {(viewMode === "month" || viewMode === "year") && (
+                <div className="flex items-center gap-2">
+                  {viewMode === "month" && (
+                    <select
+                      value={filterMonth}
+                      onChange={(e) => setFilterMonth(parseInt(e.target.value))}
+                      className="bg-white border border-border rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      {months.map((m, i) => (
+                        <option key={m} value={i}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <select
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(parseInt(e.target.value))}
+                    className="bg-white border border-border rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    {years.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="h-8 w-px bg-border hidden md:block" />
+              <p className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                Filter:{" "}
+                <span className="text-foreground">
+                  {viewMode === "today"
+                    ? "Harian"
+                    : viewMode === "month"
+                      ? "Bulanan"
+                      : viewMode === "year"
+                        ? "Tahunan"
+                        : "Semua"}
+                </span>
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Grid - Balanced Layout */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">

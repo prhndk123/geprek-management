@@ -7,6 +7,11 @@ import {
   TrendingUp,
   Calendar,
   Trash2,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  ListFilter,
 } from "lucide-react";
 import {
   Card,
@@ -54,6 +59,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { productsAPI, salesAPI, stockAPI } from "~/services/api";
+import { cn } from "~/lib/utils";
 
 const Sales = () => {
   const {
@@ -65,24 +71,34 @@ const Sales = () => {
 
   const [sales, setSales] = useState<Sale[]>(cachedSales);
   const [products, setProductsState] = useState<Product[]>(cachedProducts);
-
-  // Sync local state when global store changes (for navigation caching)
-  useEffect(() => {
-    setSales(cachedSales);
-    setProductsState(cachedProducts);
-  }, [cachedSales, cachedProducts]);
-
   const [selectedProduct, setSelectedProduct] = useState("");
   const [quantity, setQuantity] = useState<number | "">(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const selectedProductData = products.find((p) => p.id === selectedProduct);
-  const totalPrice = selectedProductData
-    ? selectedProductData.price * (typeof quantity === "number" ? quantity : 0)
-    : 0;
+  const [viewMode, setViewMode] = useState<"all" | "month" | "year">("all");
+  const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [displayMode, setDisplayMode] = useState<"detail" | "summary">(
+    "detail",
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setBy] = useState<"date" | "total">("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  // Fetch daftar penjualan dari API saat halaman dibuka
+  // Sync local state when global store changes
+  useEffect(() => {
+    setSales(cachedSales);
+    setProductsState(cachedProducts);
+  }, [cachedSales, cachedProducts]);
+
+  const selectedProductData = products.find((p) => p.id === selectedProduct);
+  const totalPrice =
+    selectedProductData && typeof quantity === "number"
+      ? selectedProductData.price * quantity
+      : 0;
+
+  // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -90,24 +106,73 @@ const Sales = () => {
           productsAPI.list(),
           salesAPI.list(),
         ]);
-
         setProductsState(productsData);
         setSales(salesData);
-
-        // Sync to global store (cache)
         setProducts(productsData);
         setGlobalSales(salesData);
       } catch (error: any) {
-        const message =
-          error?.response?.data?.message ||
-          error?.message ||
-          "Gagal memuat data penjualan";
-        toast.error(message);
+        toast.error("Gagal memuat data penjualan");
       }
     };
-
     fetchData();
   }, [setProducts, setGlobalSales]);
+
+  // Filter & Sort Logic
+  const processedSales = (() => {
+    let filtered = sales.filter((sale) => {
+      const saleDate = new Date(sale.date);
+      if (viewMode === "month") {
+        return (
+          saleDate.getMonth() === filterMonth &&
+          saleDate.getFullYear() === filterYear
+        );
+      }
+      if (viewMode === "year") {
+        return saleDate.getFullYear() === filterYear;
+      }
+      return true;
+    });
+
+    if (searchQuery) {
+      filtered = filtered.filter((sale) =>
+        sale.productName.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+    }
+
+    if (displayMode === "summary") {
+      const grouped = filtered.reduce(
+        (acc, sale) => {
+          const dateKey = new Date(sale.date).toDateString();
+          if (!acc[dateKey]) {
+            acc[dateKey] = {
+              id: `summary-${dateKey}`,
+              date: sale.date,
+              productName: "Rekap Harian",
+              quantity: 0,
+              price: 0,
+              total: 0,
+              isSummary: true,
+            };
+          }
+          acc[dateKey].quantity += sale.quantity;
+          acc[dateKey].total += sale.total;
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
+      filtered = Object.values(grouped);
+    }
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "date") {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+      } else {
+        return sortOrder === "asc" ? a.total - b.total : b.total - a.total;
+      }
+    });
+  })();
 
   const handleAddSale = async () => {
     if (!selectedProduct) {
@@ -118,56 +183,32 @@ const Sales = () => {
       toast.error("Jumlah minimal 1");
       return;
     }
-
     setIsLoading(true);
-
     try {
       const product = products.find((p) => p.id === selectedProduct);
       if (!product) return;
-
       const created = await salesAPI.create({
-        productId: selectedProduct, // objectId dari products
+        productId: selectedProduct,
         productName: product.name,
         price: product.price,
-        quantity: typeof quantity === "number" ? quantity : 0,
+        quantity: quantity,
       });
-
-      // Update list lokal & global
       setSales((prev) => [created, ...prev]);
       useStore.getState().setSales([created, ...cachedSales]);
-
-      // Kurangi stok ayam matang jika produk menggunakan ayam
       if (product.useChicken) {
         const { stock: currentStock, setStock } = useStore.getState();
         try {
           const updatedStock = await stockAPI.update({
-            cookedChicken: Math.max(
-              0,
-              currentStock.cookedChicken -
-                (typeof quantity === "number" ? quantity : 0),
-            ),
+            cookedChicken: Math.max(0, currentStock.cookedChicken - quantity),
           });
           setStock(updatedStock);
-        } catch (stockError) {
-          console.error("Gagal update stok:", stockError);
-          // Kita tidak membatalkan penjualan jika stok gagal diupdate,
-          // tapi beri info di log
-        }
+        } catch (e) {}
       }
-
-      toast.success("Penjualan berhasil dicatat!", {
-        description: `${quantity}x ${product.name} - ${formatRupiah(totalPrice)}`,
-      });
-
-      // Reset form
+      toast.success("Penjualan berhasil dicatat!");
       setSelectedProduct("");
       setQuantity(1);
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Gagal menyimpan penjualan";
-      toast.error(message);
+    } catch (e) {
+      toast.error("Gagal menyimpan penjualan");
     } finally {
       setIsLoading(false);
     }
@@ -177,102 +218,174 @@ const Sales = () => {
     setIsDeleting(id);
     try {
       await salesAPI.delete(id);
-
-      // Update local & global state
       const updatedSales = sales.filter((s) => s.id !== id);
       setSales(updatedSales);
       useStore.getState().removeSale(id);
-
       toast.success("Riwayat penjualan berhasil dihapus");
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Gagal menghapus riwayat penjualan";
-      toast.error(message);
+    } catch (e) {
+      toast.error("Gagal menghapus riwayat penjualan");
     } finally {
       setIsDeleting(null);
     }
   };
 
-  // Untuk sementara, gunakan helper existing untuk menghitung
-  // total hari ini & item terjual berdasarkan list `sales` lokal.
-  const today = new Date().toDateString();
-  const todaySalesList = sales.filter(
-    (sale) => new Date(sale.date).toDateString() === today,
+  const statsSales = sales.filter((sale) => {
+    const saleDate = new Date(sale.date);
+    if (viewMode === "month") {
+      return (
+        saleDate.getMonth() === filterMonth &&
+        saleDate.getFullYear() === filterYear
+      );
+    }
+    if (viewMode === "year") {
+      return saleDate.getFullYear() === filterYear;
+    }
+    return new Date(sale.date).toDateString() === new Date().toDateString();
+  });
+
+  const displaySalesTotal = statsSales.reduce(
+    (sum, sale) => sum + sale.total,
+    0,
   );
-  const todaySales = todaySalesList.reduce((sum, sale) => sum + sale.total, 0);
-  const itemsSold = todaySalesList.reduce(
+  const displayItemsSold = statsSales.reduce(
     (sum, sale) => sum + sale.quantity,
     0,
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl md:text-3xl font-heading font-bold text-foreground flex items-center gap-3">
-          <ShoppingCart className="w-7 h-7 text-primary" />
-          Pencatatan Penjualan
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Catat penjualan ayam geprek harian
-        </p>
+    <div className="space-y-6 animate-fade-in pb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-heading font-bold text-foreground flex items-center gap-3">
+            <ShoppingCart className="w-7 h-7 text-primary" />
+            Pencatatan Penjualan
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Catat dan pantau riwayat penjualan Anda
+          </p>
+        </div>
+        <div className="flex items-center gap-2 bg-muted/30 p-1 rounded-full border">
+          {(["month", "year", "all"] as const).map((m) => (
+            <Button
+              key={m}
+              variant={viewMode === m ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode(m)}
+              className="rounded-full h-8 px-4 capitalize"
+            >
+              {m === "all" ? "Semua" : m === "month" ? "Bulan" : "Tahun"}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {/* Stats */}
+      {viewMode !== "all" && (
+        <Card className="premium-card bg-muted/10 border-none shadow-none">
+          <CardContent className="p-4 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Periode:</span>
+              {viewMode === "month" && (
+                <select
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(parseInt(e.target.value))}
+                  className="bg-white border rounded-md px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  {[
+                    "Januari",
+                    "Februari",
+                    "Maret",
+                    "April",
+                    "Mei",
+                    "Juni",
+                    "Juli",
+                    "Agustus",
+                    "September",
+                    "Oktober",
+                    "November",
+                    "Desember",
+                  ].map((m, i) => (
+                    <option key={m} value={i}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                value={filterYear}
+                onChange={(e) => setFilterYear(parseInt(e.target.value))}
+                className="bg-white border rounded-md px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {Array.from({ length: 5 }, (_, i) => 2026 - i).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="h-4 w-px bg-border sm:block hidden" />
+            <p className="text-xs text-muted-foreground italic">
+              Menampilkan data untuk{" "}
+              {viewMode === "month"
+                ? `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][filterMonth]} ${filterYear}`
+                : `Tahun ${filterYear}`}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatsCard
-          title="Penjualan Hari Ini"
-          value={formatRupiah(todaySales)}
-          numericValue={todaySales}
+          title={viewMode === "all" ? "Penjualan Hari Ini" : "Total Penjualan"}
+          value={formatRupiah(displaySalesTotal)}
+          numericValue={displaySalesTotal}
           formatter={formatRupiah}
           icon={TrendingUp}
+          iconClassName="bg-primary/10 text-primary"
         />
         <StatsCard
           title="Item Terjual"
-          value={`${itemsSold} item`}
-          numericValue={itemsSold}
+          value={`${displayItemsSold} item`}
+          numericValue={displayItemsSold}
           formatter={(v) => `${v} item`}
           icon={Receipt}
-          iconClassName="bg-secondary/10"
+          iconClassName="bg-secondary/10 text-secondary"
         />
         <StatsCard
           title="Total Transaksi"
-          value={sales.length}
-          numericValue={sales.length}
+          value={statsSales.length}
+          numericValue={statsSales.length}
           icon={Calendar}
-          iconClassName="bg-accent/10"
+          iconClassName="bg-success/10 text-success"
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Add Sale Form */}
-        <Card className="premium-card">
+        <Card className="premium-card h-fit">
           <CardHeader>
             <CardTitle className="text-lg font-heading flex items-center gap-2">
               <Plus className="w-5 h-5 text-primary" />
               Tambah Penjualan
             </CardTitle>
-            <CardDescription>Pilih produk dan jumlah</CardDescription>
+            <CardDescription>
+              Pencatatan cepat menu yang terjual
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Product Selection */}
             <div className="space-y-2">
-              <Label>Produk</Label>
+              <Label>Pilih Produk</Label>
               <Select
                 value={selectedProduct}
                 onValueChange={setSelectedProduct}
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger className="bg-white">
                   <SelectValue placeholder="Pilih produk..." />
                 </SelectTrigger>
                 <SelectContent>
                   {products.map((product) => (
                     <SelectItem key={product.id} value={product.id}>
-                      <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center justify-between w-full pr-2">
                         <span>{product.name}</span>
-                        <span className="text-muted-foreground group-focus:text-white ml-2 transition-colors">
+                        <span className="text-xs font-semibold text-primary ml-2">
                           {formatRupiah(product.price)}
                         </span>
                       </div>
@@ -282,64 +395,74 @@ const Sales = () => {
               </Select>
             </div>
 
-            {/* Quantity */}
             <div className="space-y-2">
-              <Label htmlFor="quantity">Jumlah</Label>
-              <Input
-                id="quantity"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={100}
-                value={quantity}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  const value = e.target.value;
-                  if (value === "") {
-                    setQuantity("");
-                    return;
+              <Label htmlFor="quantity">Jumlah Porsi</Label>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="rounded-lg h-11 w-11 shrink-0"
+                  onClick={() =>
+                    setQuantity((prev) =>
+                      Math.max(1, (typeof prev === "number" ? prev : 1) - 1),
+                    )
                   }
-                  const parsed = Number(value);
-                  if (!Number.isNaN(parsed)) {
-                    setQuantity(parsed);
+                >
+                  -
+                </Button>
+                <Input
+                  id="quantity"
+                  type="number"
+                  inputMode="numeric"
+                  value={quantity}
+                  onChange={(e) =>
+                    setQuantity(
+                      e.target.value === "" ? "" : Number(e.target.value),
+                    )
                   }
-                }}
-                className="bg-background"
-              />
+                  className="bg-white h-11 text-center font-bold text-lg"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="rounded-lg h-11 w-11 shrink-0"
+                  onClick={() =>
+                    setQuantity(
+                      (prev) => (typeof prev === "number" ? prev : 0) + 1,
+                    )
+                  }
+                >
+                  +
+                </Button>
+              </div>
             </div>
 
-            {/* Price Display */}
             {selectedProduct && (
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                <div className="flex items-center justify-between mb-2">
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
+                <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">
                     Harga Satuan
                   </span>
-                  <span className="text-sm font-medium text-foreground">
+                  <span className="text-sm font-medium">
                     {formatRupiah(selectedProductData?.price || 0)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Jumlah</span>
-                  <span className="text-sm font-medium text-foreground">
-                    x{quantity}
-                  </span>
+                  <span className="text-sm font-medium">x{quantity}</span>
                 </div>
-                <div className="border-t border-primary/20 my-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">
-                      Total
-                    </span>
-                    <span className="text-lg font-bold text-primary">
-                      {formatRupiah(totalPrice)}
-                    </span>
-                  </div>
+                <div className="h-px bg-primary/20 my-2" />
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-foreground">Total</span>
+                  <span className="text-xl font-black text-primary">
+                    {formatRupiah(totalPrice)}
+                  </span>
                 </div>
               </div>
             )}
 
-            {/* Submit Button */}
             <Button
-              className="w-full h-12 bg-gradient-primary text-primary-foreground hover:opacity-90 btn-primary"
+              className="w-full h-12 bg-gradient-primary hover:scale-[1.02] transition-transform text-primary-foreground font-bold shadow-glow"
               onClick={handleAddSale}
               disabled={!selectedProduct || isLoading}
             >
@@ -351,124 +474,198 @@ const Sales = () => {
               ) : (
                 <>
                   <Plus className="w-5 h-5 mr-2" />
-                  Tambah Penjualan
+                  Simpan Transaksi
                 </>
               )}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Sales History */}
         <Card className="premium-card lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-primary" />
-              Riwayat Penjualan
-            </CardTitle>
-            <CardDescription>{sales.length} transaksi tercatat</CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-lg font-heading flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-primary" />
+                Riwayat Penjualan
+              </CardTitle>
+              <CardDescription>
+                {processedSales.length} baris ditampilkan
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Cari produk..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-sm bg-muted/50 border-none focus-visible:ring-1"
+                />
+              </div>
+              <div className="flex items-center bg-muted/50 p-1 rounded-lg border h-9 shrink-0">
+                <Button
+                  variant={displayMode === "detail" ? "default" : "ghost"}
+                  size="xs"
+                  onClick={() => setDisplayMode("detail")}
+                  className="px-2"
+                >
+                  Detail
+                </Button>
+                <Button
+                  variant={displayMode === "summary" ? "default" : "ghost"}
+                  size="xs"
+                  onClick={() => setDisplayMode("summary")}
+                  className="px-2"
+                >
+                  Rekap
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {sales.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
+            {processedSales.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  <Receipt className="w-8 h-8 text-muted-foreground" />
+                  <ListFilter className="w-8 h-8 text-muted-foreground" />
                 </div>
-                <p className="text-muted-foreground">
-                  Belum ada penjualan tercatat
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Mulai catat penjualan pertama Anda
+                <p className="text-muted-foreground font-medium">
+                  Data tidak ditemukan
                 </p>
               </div>
             ) : (
-              <div className="rounded-md border overflow-hidden">
-                <div className="max-h-[450px] overflow-y-auto overflow-x-auto custom-scrollbar">
-                  <Table className="min-w-[700px] relative">
-                    <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
+              <div className="rounded-xl border border-border/50 overflow-hidden bg-white/50">
+                <div className="max-h-[500px] overflow-y-auto overflow-x-auto custom-scrollbar">
+                  <Table className="min-w-[550px]">
+                    <TableHeader className="sticky top-0 bg-white z-20 shadow-sm">
                       <TableRow className="hover:bg-transparent border-b">
-                        <TableHead className="text-xs font-medium py-3">
-                          Tanggal
+                        <TableHead
+                          className="text-xs font-bold cursor-pointer"
+                          onClick={() => {
+                            if (sortBy === "date")
+                              setSortOrder(
+                                sortOrder === "asc" ? "desc" : "asc",
+                              );
+                            else {
+                              setBy("date");
+                              setSortOrder("desc");
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-1">
+                            Tanggal
+                            {sortBy === "date" &&
+                              (sortOrder === "asc" ? (
+                                <ArrowUp className="w-3 h-3" />
+                              ) : (
+                                <ArrowDown className="w-3 h-3" />
+                              ))}
+                          </div>
                         </TableHead>
-                        <TableHead className="text-xs font-medium py-3">
+                        <TableHead className="text-xs font-bold">
                           Produk
                         </TableHead>
-                        <TableHead className="text-xs font-medium text-center py-3">
+                        <TableHead className="text-xs font-bold text-center">
                           Qty
                         </TableHead>
-                        <TableHead className="text-xs font-medium text-center py-3">
-                          Harga
+                        {displayMode === "detail" && (
+                          <TableHead className="text-xs font-bold text-center">
+                            Harga
+                          </TableHead>
+                        )}
+                        <TableHead
+                          className="text-xs font-bold text-center cursor-pointer"
+                          onClick={() => {
+                            if (sortBy === "total")
+                              setSortOrder(
+                                sortOrder === "asc" ? "desc" : "asc",
+                              );
+                            else {
+                              setBy("total");
+                              setSortOrder("desc");
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            Total
+                            {sortBy === "total" &&
+                              (sortOrder === "asc" ? (
+                                <ArrowUp className="w-3 h-3" />
+                              ) : (
+                                <ArrowDown className="w-3 h-3" />
+                              ))}
+                          </div>
                         </TableHead>
-                        <TableHead className="text-xs font-medium text-center py-3">
-                          Total
-                        </TableHead>
-                        <TableHead className="text-xs font-medium text-center py-3">
-                          Aksi
-                        </TableHead>
+                        {displayMode === "detail" && (
+                          <TableHead className="text-xs font-bold text-center">
+                            Aksi
+                          </TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sales.map((sale) => (
+                      {processedSales.map((sale) => (
                         <TableRow
                           key={sale.id}
-                          className="table-row-hover border-b last:border-0"
+                          className={cn(
+                            "group transition-colors",
+                            (sale as any).isSummary
+                              ? "bg-primary/5 font-semibold"
+                              : "hover:bg-muted/30",
+                          )}
                         >
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap py-4">
+                          <TableCell className="text-xs text-muted-foreground py-3">
                             {formatDate(sale.date)}
                           </TableCell>
-                          <TableCell className="text-sm font-medium text-foreground whitespace-nowrap py-4">
+                          <TableCell className="text-sm py-3">
                             {sale.productName}
                           </TableCell>
-                          <TableCell className="text-sm text-center text-muted-foreground py-4">
+                          <TableCell className="text-sm text-center font-bold py-3">
                             {sale.quantity}
                           </TableCell>
-                          <TableCell className="text-sm text-center text-muted-foreground whitespace-nowrap py-4">
-                            {formatRupiah(sale.price)}
-                          </TableCell>
-                          <TableCell className="text-sm text-center font-semibold text-primary whitespace-nowrap py-4">
+                          {displayMode === "detail" && (
+                            <TableCell className="text-sm text-center text-muted-foreground py-3">
+                              {formatRupiah(sale.price)}
+                            </TableCell>
+                          )}
+                          <TableCell className="text-sm text-center font-bold text-primary py-3">
                             {formatRupiah(sale.total)}
                           </TableCell>
-                          <TableCell className="text-sm text-center py-4">
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                  disabled={isDeleting === sale.id}
-                                >
-                                  {isDeleting === sale.id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-4 h-4" />
-                                  )}
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    Hapus Riwayat Penjualan?
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Apakah Anda yakin ingin menghapus penjualan{" "}
-                                    <span className="font-semibold text-foreground">
-                                      {sale.productName}
-                                    </span>{" "}
-                                    ini? Tindakan ini akan menghapus data secara
-                                    permanen dari sistem.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Batal</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => commitDeleteSale(sale.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                          {displayMode === "detail" && (
+                            <TableCell className="text-sm text-center py-3">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                                    disabled={isDeleting === sale.id}
                                   >
-                                    Hapus
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </TableCell>
+                                    {isDeleting === sale.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      Hapus Transaksi?
+                                    </AlertDialogTitle>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => commitDeleteSale(sale.id)}
+                                      className="bg-destructive text-white hover:bg-destructive/90"
+                                    >
+                                      Hapus
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -479,7 +676,6 @@ const Sales = () => {
           </CardContent>
         </Card>
       </div>
-
       {/* Product Price Reference */}
       <Card className="premium-card">
         <CardHeader>

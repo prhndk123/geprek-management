@@ -1,6 +1,6 @@
 import { useState, FormEvent, ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChefHat, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -81,8 +81,15 @@ const Login = () => {
         <Card className="bg-white border-0 shadow-2xl">
           <CardHeader className="text-center pb-2">
             {/* Logo */}
-            <div className="mx-auto mb-4 w-20 h-20 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-glow">
-              <ChefHat className="w-10 h-10 text-primary-foreground" />
+            <div className="mx-auto mb-4 relative group">
+              <div className="absolute -inset-1 bg-gradient-primary rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+              <div className="relative w-24 h-24 rounded-2xl bg-white border border-border flex items-center justify-center overflow-hidden shadow-glow">
+                <img
+                  src="/icons/icon.png"
+                  alt="Logo Ayam Geprek Sriwedari"
+                  className="w-20 h-20 object-contain transform group-hover:scale-110 transition-transform duration-500"
+                />
+              </div>
             </div>
 
             <CardTitle className="text-2xl font-heading font-bold text-foreground">

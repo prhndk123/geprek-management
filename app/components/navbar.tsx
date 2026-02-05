@@ -8,7 +8,6 @@ import {
   LogOut,
   Menu,
   X,
-  ChefHat,
   LucideIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -48,14 +47,25 @@ export const Navbar = () => {
       {/* Logo */}
       <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center">
-            <ChefHat className="w-6 h-6 text-primary-foreground" />
+          <div className="relative group">
+            {/* Logo Accent / Glow */}
+            <div className="absolute -inset-1 bg-gradient-primary rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+
+            <div className="relative w-12 h-12 rounded-2xl bg-white border border-border flex items-center justify-center overflow-hidden shadow-sm">
+              <img
+                src="/icons/icon.png"
+                alt="Logo Ayam Geprek Sriwedari"
+                className="w-10 h-10 object-contain transform group-hover:scale-110 transition-transform duration-300"
+              />
+            </div>
           </div>
           <div>
             <h1 className="font-heading font-bold text-lg text-foreground leading-tight">
               Ayam Geprek
             </h1>
-            <p className="text-xs text-muted-foreground">Sriwedari</p>
+            <p className="text-xs text-muted-foreground font-medium">
+              Sriwedari
+            </p>
           </div>
         </div>
       </div>
@@ -65,13 +75,13 @@ export const Navbar = () => {
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
-          
+
           return (
             <NavLink
               key={item.path}
               to={item.path}
               onClick={onItemClick}
-              className={`nav-item ${isActive ? 'active' : ''}`}
+              className={`nav-item ${isActive ? "active" : ""}`}
             >
               <Icon className="w-5 h-5" />
               <span>{item.label}</span>
@@ -118,11 +128,15 @@ export const Navbar = () => {
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
         <div className="flex items-center justify-between px-4 h-16">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
-              <ChefHat className="w-5 h-5 text-primary-foreground" />
+            <div className="w-9 h-9 rounded-xl bg-white border border-border flex items-center justify-center overflow-hidden shadow-sm">
+              <img
+                src="/icons/icon.png"
+                alt="Logo"
+                className="w-7 h-7 object-contain"
+              />
             </div>
             <span className="font-heading font-bold text-foreground">
-              Ayam Geprek
+              Ayam Geprek Sriwedari
             </span>
           </div>
 
@@ -145,12 +159,12 @@ export const Navbar = () => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
-            
+
             return (
               <NavLink
                 key={item.path}
                 to={item.path}
-                className={`mobile-nav-item ${isActive ? 'active' : ''}`}
+                className={`mobile-nav-item ${isActive ? "active" : ""}`}
               >
                 <Icon className="w-5 h-5 transition-transform duration-200" />
                 <span className="text-[10px] mt-0.5">{item.label}</span>
