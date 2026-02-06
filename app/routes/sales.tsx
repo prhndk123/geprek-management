@@ -165,10 +165,11 @@ const Sales = () => {
         // Summary mode fetches all for the period to group client-side
         // Detail mode fetches with pagination
         const offset = (currentPage - 1) * itemsPerPage;
-        const limit = displayMode === "summary" ? 366 : itemsPerPage;
 
         const [salesData, countData] = await Promise.all([
-          salesAPI.list(displayMode === "summary" ? 0 : offset, limit, where),
+          displayMode === "summary"
+            ? salesAPI.listAll(where)
+            : salesAPI.list(offset, itemsPerPage, where),
           salesAPI.count(where),
         ]);
 
@@ -363,7 +364,7 @@ const Sales = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-heading font-bold text-foreground flex items-center gap-3">
             <ShoppingCart className="w-7 h-7 text-primary" />
@@ -373,14 +374,14 @@ const Sales = () => {
             Catat dan pantau riwayat penjualan Anda
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-muted/30 p-1 rounded-full border">
+        <div className="flex items-center justify-center gap-2 bg-muted/30 p-1.5 rounded-full border w-full md:w-fit md:self-end">
           {(["month", "year", "all"] as const).map((m) => (
             <Button
               key={m}
               variant={viewMode === m ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode(m)}
-              className="rounded-full h-8 px-4 capitalize"
+              className="rounded-full h-8 px-5 capitalize flex-1 md:flex-initial"
             >
               {m === "all" ? "Semua" : m === "month" ? "Bulan" : "Tahun"}
             </Button>

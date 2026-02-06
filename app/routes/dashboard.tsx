@@ -216,7 +216,7 @@ const Dashboard = () => {
 
       {/* Filter Bar */}
       <Card className="premium-card bg-muted/30 border-none shadow-none">
-        <CardContent className="p-4">
+        <CardContent className="p-1">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
               <Button

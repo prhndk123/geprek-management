@@ -135,6 +135,18 @@ export const salesAPI = {
     return data.map(mapSale);
   },
 
+  async listAll(where?: string): Promise<Sale[]> {
+    let allSales: Sale[] = [];
+    let offset = 0;
+    while (true) {
+      const batch = await this.list(offset, 100, where);
+      allSales = [...allSales, ...batch];
+      if (batch.length < 100) break;
+      offset += 100;
+    }
+    return allSales;
+  },
+
   async count(where?: string): Promise<number> {
     const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
       params: { where },
