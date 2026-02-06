@@ -613,7 +613,7 @@ const Sales = () => {
                   className="pl-9 h-9 text-sm bg-muted/50 border-none focus-visible:ring-1"
                 />
               </div>
-              <div className="flex items-center bg-muted/50 p-1 rounded-lg border h-9 shrink-0">
+              <div className="flex items-center bg-muted/50 p-1 rounded-lg border h-9 shrink-0 gap-x-1">
                 <Button
                   variant={displayMode === "detail" ? "default" : "ghost"}
                   size="xs"
