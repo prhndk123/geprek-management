@@ -63,13 +63,21 @@ import { toast } from "sonner";
 import { productsAPI, salesAPI, stockAPI } from "~/services/api";
 import { cn } from "~/lib/utils";
 import { Skeleton } from "~/components/ui/skeleton";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
+import { Check, Edit2 } from "lucide-react";
 
 const Sales = () => {
   const {
     products: cachedProducts,
     sales: cachedSales,
+    stock,
     setProducts,
     setSales: setGlobalSales,
+    setStock,
   } = useStore();
 
   const [sales, setSales] = useState<Sale[]>(cachedSales);
@@ -123,15 +131,19 @@ const Sales = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const productsData = await productsAPI.list();
+        const [productsData, stockData] = await Promise.all([
+          productsAPI.list(),
+          stockAPI.get(),
+        ]);
         setProductsState(productsData);
         setProducts(productsData);
+        setStock(stockData);
       } catch (error: any) {
-        toast.error("Gagal memuat data produk");
+        toast.error("Gagal memuat data");
       }
     };
     fetchData();
-  }, [setProducts]);
+  }, [setProducts, setStock]);
 
   // Fetch sales whenever pagination or filters change
   useEffect(() => {
@@ -293,6 +305,17 @@ const Sales = () => {
       toast.error("Jumlah minimal 1");
       return;
     }
+
+    const product = products.find((p) => p.id === selectedProduct);
+    if (!product) return;
+
+    if (product.useChicken && stock.cookedChicken < quantity) {
+      toast.error("Stok ayam matang habis/kurang!", {
+        description: `Stok tersedia: ${stock.cookedChicken} ekor. Mohon tambah stok matang dulu.`,
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const product = products.find((p) => p.id === selectedProduct);
@@ -321,6 +344,67 @@ const Sales = () => {
       toast.error("Gagal menyimpan penjualan");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleUpdateSale = async (
+    id: string,
+    field: "productId" | "quantity",
+    value: string | number,
+  ) => {
+    const originalSale = sales.find((s) => s.id === id);
+    if (!originalSale) return;
+
+    // Optimistic update
+    const updatedSales = sales.map((s) => {
+      if (s.id === id) {
+        if (field === "productId") {
+          const newProduct = products.find((p) => p.id === value);
+          if (newProduct) {
+            return {
+              ...s,
+              productId: newProduct.id,
+              productName: newProduct.name,
+              price: newProduct.price,
+              total: newProduct.price * s.quantity,
+            };
+          }
+        }
+        if (field === "quantity") {
+          const qty = Number(value);
+          return { ...s, quantity: qty, total: s.price * qty };
+        }
+      }
+      return s;
+    });
+    setSales(updatedSales);
+
+    try {
+      let payload: any = {};
+      if (field === "productId") {
+        const newProduct = products.find((p) => p.id === value);
+        if (newProduct) {
+          payload = {
+            productId: newProduct.id,
+            productName: newProduct.name,
+            price: newProduct.price,
+            quantity: originalSale.quantity, // send current qty to recalc total in BE if needed, or handled in update
+          };
+        }
+      } else {
+        payload = {
+          quantity: Number(value),
+          price: originalSale.price,
+        };
+      }
+
+      await salesAPI.update(id, payload);
+      const latestSales = await salesAPI.listAll(); // Refresh to be sure or just stick with optimistic
+      // useStore.getState().setSales(latestSales); // Sync global
+      toast.success("Data berhasil diupdate");
+    } catch (e) {
+      setSales(sales); // Revert
+      toast.error("Gagal update data");
     }
   };
 
@@ -755,10 +839,72 @@ const Sales = () => {
                                 {formatDate(sale.date)}
                               </TableCell>
                               <TableCell className="text-sm py-3">
-                                {sale.productName}
+                                {displayMode === "detail" ? (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <div className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded-md transition-colors group/edit">
+                                        <span>{sale.productName}</span>
+                                        <Edit2 className="w-3 h-3 text-muted-foreground opacity-0 group-hover/edit:opacity-100 transition-opacity" />
+                                      </div>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="p-0"
+                                      align="start"
+                                    >
+                                      <div className="p-2">
+                                        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">
+                                          Ubah Produk
+                                        </p>
+                                        <div className="space-y-1">
+                                          {products.map((p) => (
+                                            <div
+                                              key={p.id}
+                                              className={cn(
+                                                "cursor-pointer text-sm p-2 rounded-md hover:bg-muted flex items-center justify-between",
+                                                sale.productId === p.id &&
+                                                  "bg-primary/10 text-primary font-medium",
+                                              )}
+                                              onClick={() =>
+                                                handleUpdateSale(
+                                                  sale.id,
+                                                  "productId",
+                                                  p.id,
+                                                )
+                                              }
+                                            >
+                                              {p.name}
+                                              {sale.productId === p.id && (
+                                                <Check className="w-3 h-3" />
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                ) : (
+                                  sale.productName
+                                )}
                               </TableCell>
                               <TableCell className="text-sm text-center font-bold py-3">
-                                {sale.quantity}
+                                {displayMode === "detail" ? (
+                                  <input
+                                    type="number"
+                                    className="w-12 text-center bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none transition-colors"
+                                    value={sale.quantity}
+                                    onChange={(e) => {
+                                      const val = Number(e.target.value);
+                                      if (val > 0)
+                                        handleUpdateSale(
+                                          sale.id,
+                                          "quantity",
+                                          val,
+                                        );
+                                    }}
+                                  />
+                                ) : (
+                                  sale.quantity
+                                )}
                               </TableCell>
                               {displayMode === "detail" && (
                                 <TableCell className="text-sm text-center text-muted-foreground py-3">
@@ -788,20 +934,26 @@ const Sales = () => {
                                     <AlertDialogContent>
                                       <AlertDialogHeader>
                                         <AlertDialogTitle>
-                                          Hapus Transaksi?
+                                          Hapus data penjualan?
                                         </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          Tindakan ini tidak dapat dibatalkan.
+                                          Stok yang sudah terpotong{" "}
+                                          <strong>TIDAK</strong> akan
+                                          dikembalikan secara otomatis.
+                                        </AlertDialogDescription>
                                       </AlertDialogHeader>
                                       <AlertDialogFooter>
                                         <AlertDialogCancel>
                                           Batal
                                         </AlertDialogCancel>
                                         <AlertDialogAction
+                                          className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                                           onClick={() =>
                                             commitDeleteSale(sale.id)
                                           }
-                                          className="bg-destructive text-white hover:bg-destructive/90"
                                         >
-                                          Hapus
+                                          Ya, Hapus
                                         </AlertDialogAction>
                                       </AlertDialogFooter>
                                     </AlertDialogContent>

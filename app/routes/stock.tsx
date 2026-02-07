@@ -36,8 +36,8 @@ const Stock = () => {
     setStock(defaultStock);
   }, [defaultStock]);
 
-  const [addAmount, setAddAmount] = useState<number | "">(10);
-  const [fryAmount, setFryAmount] = useState<number | "">(5);
+  const [addAmount, setAddAmount] = useState<number | "">(0);
+  const [fryAmount, setFryAmount] = useState<number | "">(0);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<
     "add" | "fry" | "reset" | null
@@ -378,20 +378,22 @@ const Stock = () => {
               </p>
             </div>
 
-            {/* Complete Frying Action */}
             {stock.friedPlanning > 0 && (
               <Button
                 variant="outline"
-                className="w-full"
+                className="w-full h-auto py-3 flex flex-col gap-1"
                 onClick={handleCompleteFrying}
                 disabled={isLoading}
               >
                 {isLoading && loadingAction === "reset" ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-5 h-5 animate-spin mb-1" />
                 ) : (
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  <CheckCircle2 className="w-5 h-5 mb-1 text-green-600" />
                 )}
-                Selesaikan Goreng (Pindah ke Stok Matang)
+                <span className="font-semibold">Selesaikan Goreng</span>
+                <span className="text-xs text-muted-foreground font-normal">
+                  (Pindah ke Stok Matang)
+                </span>
               </Button>
             )}
           </CardContent>
