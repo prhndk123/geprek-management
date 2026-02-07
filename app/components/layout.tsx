@@ -52,7 +52,7 @@ export const Layout = () => {
       {(isOffline || queue.length > 0) && (
         <div
           className={cn(
-            "fixed bottom-4 left-4 z-50 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium transition-all",
+            "fixed bottom-20 left-4 right-4 md:left-4 md:right-auto md:w-fit z-50 px-4 py-2 rounded-full shadow-lg flex items-center justify-center gap-2 text-sm font-medium transition-all",
             isOffline
               ? "bg-destructive text-destructive-foreground"
               : "bg-blue-600 text-white",

@@ -35,6 +35,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  image?: string;
 }
 
 export interface AuthResponse {
@@ -56,6 +57,7 @@ export const authService = {
         id: data.objectId,
         name: data.name,
         email: data.email,
+        image: data.image, // Map image from response
       },
     };
   },
