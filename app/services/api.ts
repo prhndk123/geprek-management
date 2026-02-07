@@ -1,6 +1,11 @@
 import { axiosInstance } from "~/lib/axios";
 import { useAuthStore } from "~/modules/auth/auth.store";
-import type { AutoPostConfig, Sale, Stock, Product } from "~/store/useStore";
+import useStore, {
+  type AutoPostConfig,
+  type Sale,
+  type Stock,
+  type Product,
+} from "~/store/useStore";
 import { useOfflineQueue } from "./offlineQueue";
 
 const isOffline = () => !navigator.onLine;
@@ -100,6 +105,9 @@ const mapSale = (s: BackendlessSale): Sale => {
 
 export const productsAPI = {
   async list(): Promise<Product[]> {
+    if (isOffline()) {
+      return useStore.getState().products || [];
+    }
     const { data } = await axiosInstance.get<BackendlessProduct[]>(
       "/api/data/products",
       {
@@ -126,13 +134,7 @@ export interface CreateSaleDto {
 export const salesAPI = {
   async list(offset = 0, pageSize = 10, where?: string): Promise<Sale[]> {
     if (isOffline()) {
-      // Return cached sales if available (mock implementation for list)
-      // In a real PWA, you might query IndexedDB or just return empty/cached from store
-      const { sales } = (window as any).useStore?.getState?.() || { sales: [] };
-      // If we could import useStore here safely:
-      // return useStore.getState().sales;
-      // But for now let's reliance on what's passed or return empty
-      return [];
+      return useStore.getState().sales || [];
     }
 
     const { data } = await axiosInstance.get<BackendlessSale[]>(
@@ -245,7 +247,8 @@ export const salesAPI = {
       });
       // Return optimistic mock
       // In reality, the caller might simply update local state assuming success
-      return {} as Sale;
+      const current = useStore.getState().sales.find((s) => s.id === id);
+      return current ? ({ ...current, ...payload } as Sale) : ({} as Sale);
     }
 
     const body: any = {};
@@ -295,8 +298,13 @@ export const salesAPI = {
 export const stockAPI = {
   async get(): Promise<Stock> {
     if (isOffline()) {
-      // Return default or empty, wrapper generic
-      return { rawChicken: 0, friedPlanning: 0, cookedChicken: 0 };
+      return (
+        useStore.getState().stock || {
+          rawChicken: 0,
+          friedPlanning: 0,
+          cookedChicken: 0,
+        }
+      );
     }
 
     const { data } =
@@ -332,11 +340,7 @@ export const stockAPI = {
       // BUT user asked to modify api.ts/offlineQueue.
       // Let's try to grab store from window if available (hacky) or just return the passed stock merged with defaults.
 
-      const currentStock = (window as any).useStore?.getState?.().stock || {
-        rawChicken: 0,
-        friedPlanning: 0,
-        cookedChicken: 0,
-      };
+      const currentStock = useStore.getState().stock;
       return { ...currentStock, ...stock };
     }
 
@@ -376,11 +380,7 @@ export const stockAPI = {
           type: "UPDATE_STOCK",
           payload: stock,
         });
-        const currentStock = (window as any).useStore?.getState?.().stock || {
-          rawChicken: 0,
-          friedPlanning: 0,
-          cookedChicken: 0,
-        };
+        const currentStock = useStore.getState().stock;
         return { ...currentStock, ...stock };
       }
       throw error;
