@@ -29,90 +29,79 @@ import { Link } from "react-router";
 import { useAuthStore } from "~/modules/auth/auth.store";
 import { salesAPI, stockAPI } from "~/services/api";
 
+// Helper untuk membuat filter where clause berdasarkan range waktu
+const createDateFilter = (
+  range: "today" | "month" | "year" | "all",
+  month?: number,
+  year?: number,
+): string | undefined => {
+  const now = new Date();
+  const targetMonth = month ?? now.getMonth();
+  const targetYear = year ?? now.getFullYear();
+
+  if (range === "today") {
+    const startOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).getTime();
+    const endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1;
+    return `transactionDate >= ${startOfDay} and transactionDate <= ${endOfDay}`;
+  }
+  if (range === "month") {
+    const startOfMonth = new Date(targetYear, targetMonth, 1).getTime();
+    const endOfMonth = new Date(
+      targetYear,
+      targetMonth + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    ).getTime();
+    return `transactionDate >= ${startOfMonth} and transactionDate <= ${endOfMonth}`;
+  }
+  if (range === "year") {
+    const startOfYear = new Date(targetYear, 0, 1).getTime();
+    const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59, 999).getTime();
+    return `transactionDate >= ${startOfYear} and transactionDate <= ${endOfYear}`;
+  }
+  return undefined; // all - no filter
+};
+
 const Dashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const {
-    autoPostStatus,
-    stock: cachedStock,
-    sales: cachedSales,
-    setSales,
-    setStock,
-    getSalesToday,
-  } = useStore();
+  const { autoPostStatus, stock: cachedStock, setStock } = useStore();
   const { user } = useAuthStore();
-
-  const calculateStats = (
-    salesList: Sale[],
-    range: "today" | "month" | "year" | "all" = "today",
-    month?: number,
-    year?: number,
-  ) => {
-    const now = new Date();
-    const targetMonth = month ?? now.getMonth();
-    const targetYear = year ?? now.getFullYear();
-
-    const filtered = salesList.filter((sale) => {
-      const saleDate = new Date(sale.date);
-      if (range === "today") {
-        return saleDate.toDateString() === now.toDateString();
-      }
-      if (range === "month") {
-        return (
-          saleDate.getMonth() === targetMonth &&
-          saleDate.getFullYear() === targetYear
-        );
-      }
-      if (range === "year") {
-        return saleDate.getFullYear() === targetYear;
-      }
-      return true; // all
-    });
-
-    const totalSales = filtered.reduce((sum, sale) => sum + sale.total, 0);
-    const totalItems = filtered.reduce((sum, sale) => sum + sale.quantity, 0);
-
-    return {
-      todaySales: totalSales,
-      itemsSold: totalItems,
-      totalTransactions: filtered.length,
-    };
-  };
 
   const [viewMode, setViewMode] = useState<"today" | "month" | "year" | "all">(
     "today",
   );
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  // Initial stats from cache
-  const initialCalculated = calculateStats(cachedSales, "today");
+  // Stats state - initialized with zeros
   const [stats, setStats] = useState({
-    todaySales: initialCalculated.todaySales,
-    itemsSold: initialCalculated.itemsSold,
+    todaySales: 0,
+    itemsSold: 0,
     rawChicken: cachedStock.rawChicken,
     friedPlanning: cachedStock.friedPlanning,
     cookedChicken: cachedStock.cookedChicken,
-    totalTransactions: initialCalculated.totalTransactions,
+    totalTransactions: 0,
   });
 
-  // Calculate stats whenever sales or filter changes
-  useEffect(() => {
-    const newStats = calculateStats(
-      cachedSales,
-      viewMode,
-      filterMonth,
-      filterYear,
-    );
-    setStats((prev) => ({
-      ...prev,
-      todaySales: newStats.todaySales,
-      itemsSold: newStats.itemsSold,
-      totalTransactions: newStats.totalTransactions,
-      rawChicken: cachedStock.rawChicken,
-      friedPlanning: cachedStock.friedPlanning,
-      cookedChicken: cachedStock.cookedChicken,
-    }));
-  }, [cachedSales, cachedStock, viewMode, filterMonth, filterYear]);
+  // Calculate stats from sales data (used for server-fetched data)
+  const calculateStatsFromSales = (salesList: Sale[]) => {
+    const totalSales = salesList.reduce((sum, sale) => sum + sale.total, 0);
+    const totalItems = salesList.reduce((sum, sale) => sum + sale.quantity, 0);
+    return {
+      todaySales: totalSales,
+      itemsSold: totalItems,
+      totalTransactions: salesList.length,
+    };
+  };
 
   // Update time every second
   useEffect(() => {
@@ -122,25 +111,44 @@ const Dashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch real data from API and sync to store
+  // Fetch stats from API based on current filter
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchStats = async () => {
+      setIsLoadingStats(true);
       try {
+        // Create filter for sales query
+        const whereClause = createDateFilter(viewMode, filterMonth, filterYear);
+
+        // Fetch filtered sales and stock in parallel
         const [salesData, stockData] = await Promise.all([
-          salesAPI.list(),
+          salesAPI.listAll(whereClause),
           stockAPI.get(),
         ]);
 
-        // Sync to global store (cache)
-        setSales(salesData);
+        // Calculate stats from fetched sales
+        const calculatedStats = calculateStatsFromSales(salesData);
+
+        setStats({
+          todaySales: calculatedStats.todaySales,
+          itemsSold: calculatedStats.itemsSold,
+          totalTransactions: calculatedStats.totalTransactions,
+          rawChicken: stockData.rawChicken,
+          friedPlanning: stockData.friedPlanning,
+          cookedChicken: stockData.cookedChicken,
+        });
+
+        // Update stock in store
         setStock(stockData);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
+      } finally {
+        setIsLoadingStats(false);
+        setIsInitialLoad(false);
       }
     };
 
-    fetchData();
-  }, [setSales, setStock]);
+    fetchStats();
+  }, [viewMode, filterMonth, filterYear, setStock]);
 
   const formatTime = (date: Date): string => {
     return new Intl.DateTimeFormat("id-ID", {

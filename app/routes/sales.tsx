@@ -87,7 +87,9 @@ const Sales = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const [viewMode, setViewMode] = useState<"all" | "month" | "year">("all");
+  const [viewMode, setViewMode] = useState<"today" | "all" | "month" | "year">(
+    "today",
+  );
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [displayMode, setDisplayMode] = useState<"detail" | "summary">(
@@ -103,6 +105,13 @@ const Sales = () => {
   const [isFetching, setIsFetching] = useState(false);
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
   const itemsPerPage = 10;
+
+  // Stats state - terpisah dari table pagination
+  const [periodStats, setPeriodStats] = useState({
+    totalSales: 0,
+    itemsSold: 0,
+    transactionCount: 0,
+  });
 
   // Debounce search query
   useEffect(() => {
@@ -145,6 +154,68 @@ const Sales = () => {
     fetchData();
   }, [setProducts, setStock]);
 
+  // Fetch period stats (terpisah dari table pagination)
+  // Stats ini hanya berubah ketika filter periode (viewMode/month/year) berubah
+  // Tidak terpengaruh oleh pagination, search, atau displayMode
+  useEffect(() => {
+    const fetchPeriodStats = async () => {
+      try {
+        // Build where clause untuk periode saja (tanpa search)
+        let periodWhere: string | undefined;
+        const now = new Date();
+
+        if (viewMode === "today") {
+          const startOfDay = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+          ).getTime();
+          const endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1;
+          periodWhere = `transactionDate >= ${startOfDay} AND transactionDate <= ${endOfDay}`;
+        } else if (viewMode === "month") {
+          const start = new Date(filterYear, filterMonth, 1).getTime();
+          const end = new Date(
+            filterYear,
+            filterMonth + 1,
+            0,
+            23,
+            59,
+            59,
+          ).getTime();
+          periodWhere = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        } else if (viewMode === "year") {
+          const start = new Date(filterYear, 0, 1).getTime();
+          const end = new Date(filterYear, 11, 31, 23, 59, 59).getTime();
+          periodWhere = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        }
+        // viewMode === "all" -> periodWhere tetap undefined (semua data)
+
+        // Fetch semua data untuk periode ini untuk menghitung total stats
+        const allSalesForPeriod = await salesAPI.listAll(periodWhere);
+
+        // Hitung stats
+        const totalSales = allSalesForPeriod.reduce(
+          (sum, sale) => sum + sale.total,
+          0,
+        );
+        const itemsSold = allSalesForPeriod.reduce(
+          (sum, sale) => sum + sale.quantity,
+          0,
+        );
+
+        setPeriodStats({
+          totalSales,
+          itemsSold,
+          transactionCount: allSalesForPeriod.length,
+        });
+      } catch (error) {
+        console.error("Failed to fetch period stats:", error);
+      }
+    };
+
+    fetchPeriodStats();
+  }, [viewMode, filterMonth, filterYear]);
+
   // Fetch sales whenever pagination or filters change
   useEffect(() => {
     const fetchSalesData = async () => {
@@ -152,7 +223,17 @@ const Sales = () => {
       try {
         // Build where clause for Backendless
         let where: string | undefined;
-        if (viewMode === "month") {
+        const now = new Date();
+
+        if (viewMode === "today") {
+          const startOfDay = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+          ).getTime();
+          const endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1;
+          where = `transactionDate >= ${startOfDay} AND transactionDate <= ${endOfDay}`;
+        } else if (viewMode === "month") {
           const start = new Date(filterYear, filterMonth, 1).getTime();
           const end = new Date(
             filterYear,
@@ -211,20 +292,10 @@ const Sales = () => {
   ]);
 
   // Filter & Sort Logic
+  // Data sudah difilter dari server, jadi tidak perlu filter lagi di sini
+  // Hanya perlu filter pencarian lokal jika ada
   const processedSales = (() => {
-    let filtered = sales.filter((sale) => {
-      const saleDate = new Date(sale.date);
-      if (viewMode === "month") {
-        return (
-          saleDate.getMonth() === filterMonth &&
-          saleDate.getFullYear() === filterYear
-        );
-      }
-      if (viewMode === "year") {
-        return saleDate.getFullYear() === filterYear;
-      }
-      return true;
-    });
+    let filtered = [...sales];
 
     if (searchQuery) {
       filtered = filtered.filter((sale) =>
@@ -423,28 +494,11 @@ const Sales = () => {
     }
   };
 
-  const statsSales = sales.filter((sale) => {
-    const saleDate = new Date(sale.date);
-    if (viewMode === "month") {
-      return (
-        saleDate.getMonth() === filterMonth &&
-        saleDate.getFullYear() === filterYear
-      );
-    }
-    if (viewMode === "year") {
-      return saleDate.getFullYear() === filterYear;
-    }
-    return new Date(sale.date).toDateString() === new Date().toDateString();
-  });
-
-  const displaySalesTotal = statsSales.reduce(
-    (sum, sale) => sum + sale.total,
-    0,
-  );
-  const displayItemsSold = statsSales.reduce(
-    (sum, sale) => sum + sale.quantity,
-    0,
-  );
+  // Statistik menggunakan periodStats yang di-fetch terpisah
+  // Stats ini menampilkan total keseluruhan periode, tidak terpengaruh pagination
+  const displaySalesTotal = periodStats.totalSales;
+  const displayItemsSold = periodStats.itemsSold;
+  const displayTransactionCount = periodStats.transactionCount;
 
   return (
     <div className="space-y-6 animate-fade-in pb-8">
@@ -459,7 +513,7 @@ const Sales = () => {
           </p>
         </div>
         <div className="flex items-center justify-center gap-2 bg-muted/30 p-1.5 rounded-full border w-full md:w-fit md:self-end">
-          {(["month", "year", "all"] as const).map((m) => (
+          {(["today", "month", "year", "all"] as const).map((m) => (
             <Button
               key={m}
               variant={viewMode === m ? "default" : "ghost"}
@@ -467,13 +521,19 @@ const Sales = () => {
               onClick={() => setViewMode(m)}
               className="rounded-full h-8 px-5 capitalize flex-1 md:flex-initial"
             >
-              {m === "all" ? "Semua" : m === "month" ? "Bulan" : "Tahun"}
+              {m === "today"
+                ? "Hari Ini"
+                : m === "all"
+                  ? "Semua"
+                  : m === "month"
+                    ? "Bulan"
+                    : "Tahun"}
             </Button>
           ))}
         </div>
       </div>
 
-      {viewMode !== "all" && (
+      {(viewMode === "month" || viewMode === "year") && (
         <Card className="premium-card bg-muted/10 border-none shadow-none">
           <CardContent className="p-4 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -529,7 +589,13 @@ const Sales = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatsCard
-          title={viewMode === "all" ? "Penjualan Hari Ini" : "Total Penjualan"}
+          title={
+            viewMode === "today"
+              ? "Penjualan Hari Ini"
+              : viewMode === "all"
+                ? "Total Penjualan (Semua)"
+                : "Total Penjualan"
+          }
           value={formatRupiah(displaySalesTotal)}
           numericValue={displaySalesTotal}
           formatter={formatRupiah}
@@ -546,8 +612,8 @@ const Sales = () => {
         />
         <StatsCard
           title="Total Transaksi"
-          value={statsSales.length}
-          numericValue={statsSales.length}
+          value={displayTransactionCount}
+          numericValue={displayTransactionCount}
           icon={Calendar}
           iconClassName="bg-success/10 text-success"
         />
