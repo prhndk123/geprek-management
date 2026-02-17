@@ -129,6 +129,7 @@ export interface CreateSaleDto {
   productName: string;
   price: number;
   quantity: number;
+  transactionDate?: number; // epoch ms — jika tidak diset, default = Date.now()
 }
 
 export const salesAPI = {
@@ -174,11 +175,12 @@ export const salesAPI = {
   },
 
   async create(payload: CreateSaleDto): Promise<Sale> {
-    const now = Date.now();
+    // Gunakan transactionDate dari payload jika ada, fallback ke Date.now()
+    const txDate = payload.transactionDate ?? Date.now();
 
     // Offline / Optimistic Handling
     if (isOffline()) {
-      const tempId = `temp-${now}`;
+      const tempId = `temp-${txDate}`;
       const tempSale: Sale = {
         id: tempId,
         productId: payload.productId,
@@ -186,7 +188,7 @@ export const salesAPI = {
         price: payload.price,
         quantity: payload.quantity,
         total: payload.price * payload.quantity,
-        date: new Date(now).toISOString(),
+        date: new Date(txDate).toISOString(),
       };
 
       useOfflineQueue.getState().addToQueue({
@@ -204,7 +206,7 @@ export const salesAPI = {
         price: payload.price,
         quantity: payload.quantity,
         total: payload.price * payload.quantity,
-        transactionDate: now,
+        transactionDate: txDate,
         product: {
           objectId: payload.productId,
         },
@@ -218,7 +220,7 @@ export const salesAPI = {
     } catch (error: any) {
       // If network error, fallback to offline queue
       if (error.code === "ERR_NETWORK" || !error.response) {
-        const tempId = `temp-${now}`;
+        const tempId = `temp-${txDate}`;
         const tempSale: Sale = {
           id: tempId,
           productId: payload.productId,
@@ -226,7 +228,7 @@ export const salesAPI = {
           price: payload.price,
           quantity: payload.quantity,
           total: payload.price * payload.quantity,
-          date: new Date(now).toISOString(),
+          date: new Date(txDate).toISOString(),
         };
 
         useOfflineQueue.getState().addToQueue({
@@ -245,8 +247,6 @@ export const salesAPI = {
         type: "UPDATE_SALE",
         payload: { id, data: payload },
       });
-      // Return optimistic mock
-      // In reality, the caller might simply update local state assuming success
       const current = useStore.getState().sales.find((s) => s.id === id);
       return current ? ({ ...current, ...payload } as Sale) : ({} as Sale);
     }
@@ -259,6 +259,10 @@ export const salesAPI = {
     if (payload.productName) body.productName = payload.productName;
     if (payload.price) body.price = payload.price;
     if (payload.quantity) body.quantity = payload.quantity;
+    // Support updating transactionDate (for date editing feature)
+    if (payload.transactionDate !== undefined) {
+      body.transactionDate = payload.transactionDate;
+    }
 
     if (payload.price !== undefined && payload.quantity !== undefined) {
       body.total = payload.price * payload.quantity;

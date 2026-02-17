@@ -11,12 +11,11 @@ export default [
   // =====================
   layout("components/layout.tsx", [
     index("routes/dashboard.tsx"),
-    route("/autopost", "routes/auto-post.tsx"),
+    route("/notes", "routes/notes-menu.tsx"),
     route("/sales", "routes/sales.tsx"),
     route("/stock", "routes/stock.tsx"),
   ]),
 
   route("/login", "routes/login.tsx"),
   route("/register", "routes/register.tsx"),
-
 ] satisfies RouteConfig;

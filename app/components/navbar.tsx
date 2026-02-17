@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard,
-  Send,
+  StickyNote,
   ShoppingCart,
   Package,
   LogOut,
@@ -24,7 +24,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/autopost", label: "Auto Post", icon: Send },
+  { path: "/notes", label: "Catatan", icon: StickyNote },
   { path: "/sales", label: "Penjualan", icon: ShoppingCart },
   { path: "/stock", label: "Stok", icon: Package },
 ];

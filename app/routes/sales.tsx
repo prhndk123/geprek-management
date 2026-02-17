@@ -1,11 +1,13 @@
-import { useEffect, useState, ChangeEvent } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   ShoppingCart,
   Plus,
   Receipt,
   Loader2,
+  CalendarDays,
+  X,
   TrendingUp,
-  Calendar,
+  Calendar as CalendarIcon,
   Trash2,
   Search,
   ArrowUp,
@@ -68,6 +70,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import { Calendar } from "~/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
 import { Check, Edit2 } from "lucide-react";
 
 const Sales = () => {
@@ -87,11 +91,28 @@ const Sales = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const [viewMode, setViewMode] = useState<"today" | "all" | "month" | "year">(
-    "today",
-  );
+  // Tanggal transaksi manual (Feature 1)
+  const [saleDate, setSaleDate] = useState<Date>(new Date());
+  const [isSaleDatePickerOpen, setIsSaleDatePickerOpen] = useState(false);
+
+  const [viewMode, setViewMode] = useState<
+    "today" | "all" | "month" | "year" | "custom"
+  >("today");
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
+  // Product filter for Rekap mode (Feature 3)
+  const [recapProductFilter, setRecapProductFilter] = useState<string>("all");
+
+  // Edit date state (Feature 2)
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+
+  // Edit qty local state — allows clearing input to type new number
+  const [editingQtyMap, setEditingQtyMap] = useState<Record<string, string>>(
+    {},
+  );
   const [displayMode, setDisplayMode] = useState<"detail" | "summary">(
     "detail",
   );
@@ -187,6 +208,23 @@ const Sales = () => {
           const start = new Date(filterYear, 0, 1).getTime();
           const end = new Date(filterYear, 11, 31, 23, 59, 59).getTime();
           periodWhere = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        } else if (viewMode === "custom" && dateRange?.from) {
+          const start = new Date(
+            dateRange.from.getFullYear(),
+            dateRange.from.getMonth(),
+            dateRange.from.getDate(),
+          ).getTime();
+          const end = dateRange.to
+            ? new Date(
+                dateRange.to.getFullYear(),
+                dateRange.to.getMonth(),
+                dateRange.to.getDate(),
+                23,
+                59,
+                59,
+              ).getTime()
+            : start + 24 * 60 * 60 * 1000 - 1;
+          periodWhere = `transactionDate >= ${start} AND transactionDate <= ${end}`;
         }
         // viewMode === "all" -> periodWhere tetap undefined (semua data)
 
@@ -214,7 +252,7 @@ const Sales = () => {
     };
 
     fetchPeriodStats();
-  }, [viewMode, filterMonth, filterYear]);
+  }, [viewMode, filterMonth, filterYear, dateRange]);
 
   // Fetch sales whenever pagination or filters change
   useEffect(() => {
@@ -247,6 +285,23 @@ const Sales = () => {
         } else if (viewMode === "year") {
           const start = new Date(filterYear, 0, 1).getTime();
           const end = new Date(filterYear, 11, 31, 23, 59, 59).getTime();
+          where = `transactionDate >= ${start} AND transactionDate <= ${end}`;
+        } else if (viewMode === "custom" && dateRange?.from) {
+          const start = new Date(
+            dateRange.from.getFullYear(),
+            dateRange.from.getMonth(),
+            dateRange.from.getDate(),
+          ).getTime();
+          const end = dateRange.to
+            ? new Date(
+                dateRange.to.getFullYear(),
+                dateRange.to.getMonth(),
+                dateRange.to.getDate(),
+                23,
+                59,
+                59,
+              ).getTime()
+            : start + 24 * 60 * 60 * 1000 - 1;
           where = `transactionDate >= ${start} AND transactionDate <= ${end}`;
         }
 
@@ -286,32 +341,48 @@ const Sales = () => {
     viewMode,
     filterMonth,
     filterYear,
+    dateRange,
     displayMode,
     debouncedSearchQuery,
     setGlobalSales,
   ]);
 
-  // Filter & Sort Logic
-  // Data sudah difilter dari server, jadi tidak perlu filter lagi di sini
-  // Hanya perlu filter pencarian lokal jika ada
-  const processedSales = (() => {
+  // Filter & Sort Logic — wrapped in useMemo for performance
+  const processedSales = useMemo(() => {
     let filtered = [...sales];
 
+    // Text search filter
     if (searchQuery) {
       filtered = filtered.filter((sale) =>
-        sale.productName.toLowerCase().includes(searchQuery.toLowerCase()),
+        (sale.productName || "")
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()),
+      );
+    }
+
+    // Product filter for Rekap mode (Feature 3)
+    if (displayMode === "summary" && recapProductFilter !== "all") {
+      filtered = filtered.filter(
+        (sale) => sale.productName === recapProductFilter,
       );
     }
 
     if (displayMode === "summary") {
       const grouped = filtered.reduce(
         (acc, sale) => {
-          const dateKey = new Date(sale.date).toDateString();
+          // Safe date parsing
+          const parsedDate = new Date(sale.date);
+          const dateKey = isNaN(parsedDate.getTime())
+            ? "unknown"
+            : parsedDate.toDateString();
           if (!acc[dateKey]) {
             acc[dateKey] = {
               id: `summary-${dateKey}`,
               date: sale.date,
-              productName: "Rekap Harian",
+              productName:
+                recapProductFilter !== "all"
+                  ? recapProductFilter
+                  : "Rekap Harian",
               quantity: 0,
               price: 0,
               total: 0,
@@ -329,14 +400,14 @@ const Sales = () => {
 
     return [...filtered].sort((a, b) => {
       if (sortBy === "date") {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
+        const dateA = new Date(a.date).getTime() || 0;
+        const dateB = new Date(b.date).getTime() || 0;
         return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
       } else {
         return sortOrder === "asc" ? a.total - b.total : b.total - a.total;
       }
     });
-  })();
+  }, [sales, searchQuery, displayMode, recapProductFilter, sortBy, sortOrder]);
 
   // Calculate paginated sales
   // If displayMode is detail, sales are already paginated from server
@@ -361,7 +432,9 @@ const Sales = () => {
     viewMode,
     filterMonth,
     filterYear,
+    dateRange,
     displayMode,
+    recapProductFilter,
     searchQuery,
     sortBy,
     sortOrder,
@@ -391,11 +464,23 @@ const Sales = () => {
     try {
       const product = products.find((p) => p.id === selectedProduct);
       if (!product) return;
+      // Hitung transactionDate: gunakan saleDate dengan waktu sekarang
+      const now = new Date();
+      const txDate = new Date(
+        saleDate.getFullYear(),
+        saleDate.getMonth(),
+        saleDate.getDate(),
+        now.getHours(),
+        now.getMinutes(),
+        now.getSeconds(),
+      ).getTime();
+
       const created = await salesAPI.create({
         productId: selectedProduct,
         productName: product.name,
         price: product.price,
         quantity: quantity,
+        transactionDate: txDate,
       });
       setSales((prev) => [created, ...prev]);
       useStore.getState().setSales([created, ...cachedSales]);
@@ -411,10 +496,44 @@ const Sales = () => {
       toast.success("Penjualan berhasil dicatat!");
       setSelectedProduct("");
       setQuantity(1);
+      setSaleDate(new Date()); // Reset tanggal ke hari ini setelah simpan
     } catch (e) {
       toast.error("Gagal menyimpan penjualan");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Handler untuk update tanggal transaksi (Feature 2)
+  const handleUpdateDate = async (id: string, newDate: Date) => {
+    const originalSale = sales.find((s) => s.id === id);
+    if (!originalSale) return;
+
+    // Preserve waktu asli, hanya ubah tanggal
+    const originalDate = new Date(originalSale.date);
+    const updatedDate = new Date(
+      newDate.getFullYear(),
+      newDate.getMonth(),
+      newDate.getDate(),
+      originalDate.getHours(),
+      originalDate.getMinutes(),
+      originalDate.getSeconds(),
+    );
+    const txTimestamp = updatedDate.getTime();
+
+    // Optimistic update - immutable
+    const updatedSales = sales.map((s) =>
+      s.id === id ? { ...s, date: updatedDate.toISOString() } : s,
+    );
+    setSales(updatedSales);
+    setEditingDateId(null);
+
+    try {
+      await salesAPI.update(id, { transactionDate: txTimestamp } as any);
+      toast.success("Tanggal berhasil diupdate");
+    } catch (e) {
+      setSales(sales); // Revert on error
+      toast.error("Gagal update tanggal");
     }
   };
 
@@ -459,7 +578,7 @@ const Sales = () => {
             productId: newProduct.id,
             productName: newProduct.name,
             price: newProduct.price,
-            quantity: originalSale.quantity, // send current qty to recalc total in BE if needed, or handled in update
+            quantity: originalSale.quantity,
           };
         }
       } else {
@@ -470,8 +589,31 @@ const Sales = () => {
       }
 
       await salesAPI.update(id, payload);
-      const latestSales = await salesAPI.listAll(); // Refresh to be sure or just stick with optimistic
-      // useStore.getState().setSales(latestSales); // Sync global
+
+      // Adjust stock if qty changed on a useChicken product
+      if (field === "quantity") {
+        // Fallback: cari by ID dulu, kalau tidak ketemu cari by name
+        const product =
+          products.find((p) => p.id === originalSale.productId) ||
+          products.find((p) => p.name === originalSale.productName);
+        if (product?.useChicken) {
+          const oldQty = originalSale.quantity;
+          const newQty = Number(value);
+          const delta = oldQty - newQty; // positive = returning stock, negative = using more
+          if (delta !== 0) {
+            const { stock: currentStock, setStock } = useStore.getState();
+            try {
+              const updatedStock = await stockAPI.update({
+                cookedChicken: Math.max(0, currentStock.cookedChicken + delta),
+              });
+              setStock(updatedStock);
+            } catch (e) {
+              toast.error("Gagal update stok setelah edit jumlah");
+            }
+          }
+        }
+      }
+
       toast.success("Data berhasil diupdate");
     } catch (e) {
       setSales(sales); // Revert
@@ -479,13 +621,66 @@ const Sales = () => {
     }
   };
 
+  // Commit qty edit — validates and calls handleUpdateSale
+  const commitQtyEdit = (saleId: string) => {
+    const rawVal = editingQtyMap[saleId];
+    const sale = sales.find((s) => s.id === saleId);
+    if (!sale) return;
+
+    // Validate: empty, 0, or non-positive
+    const num = rawVal !== undefined ? Number(rawVal) : sale.quantity;
+    if (!rawVal || rawVal.trim() === "" || isNaN(num) || num < 1) {
+      toast.error("Jumlah harus minimal 1");
+      // Revert to original value
+      setEditingQtyMap((prev) => {
+        const next = { ...prev };
+        delete next[saleId];
+        return next;
+      });
+      return;
+    }
+
+    // Only update if value actually changed
+    if (num !== sale.quantity) {
+      handleUpdateSale(saleId, "quantity", num);
+    }
+
+    // Clear editing state
+    setEditingQtyMap((prev) => {
+      const next = { ...prev };
+      delete next[saleId];
+      return next;
+    });
+  };
+
   const commitDeleteSale = async (id: string) => {
     setIsDeleting(id);
+    // Simpan data sale sebelum dihapus (untuk adjust stock)
+    const deletedSale = sales.find((s) => s.id === id);
     try {
       await salesAPI.delete(id);
       const updatedSales = sales.filter((s) => s.id !== id);
       setSales(updatedSales);
       useStore.getState().removeSale(id);
+
+      // Return stock jika produk useChicken
+      if (deletedSale) {
+        const product =
+          products.find((p) => p.id === deletedSale.productId) ||
+          products.find((p) => p.name === deletedSale.productName);
+        if (product?.useChicken && deletedSale.quantity > 0) {
+          const { stock: currentStock, setStock } = useStore.getState();
+          try {
+            const updatedStock = await stockAPI.update({
+              cookedChicken: currentStock.cookedChicken + deletedSale.quantity,
+            });
+            setStock(updatedStock);
+          } catch (e) {
+            toast.error("Penjualan dihapus, tapi gagal mengembalikan stok");
+          }
+        }
+      }
+
       toast.success("Riwayat penjualan berhasil dihapus");
     } catch (e) {
       toast.error("Gagal menghapus riwayat penjualan");
@@ -512,51 +707,129 @@ const Sales = () => {
             Catat dan pantau riwayat penjualan Anda
           </p>
         </div>
-        <div className="flex items-center justify-center gap-2 bg-muted/30 p-1.5 rounded-full border w-full md:w-fit md:self-end">
-          {(["today", "month", "year", "all"] as const).map((m) => (
-            <Button
-              key={m}
-              variant={viewMode === m ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode(m)}
-              className="rounded-full h-8 px-5 capitalize flex-1 md:flex-initial"
-            >
-              {m === "today"
-                ? "Hari Ini"
-                : m === "all"
-                  ? "Semua"
-                  : m === "month"
-                    ? "Bulan"
-                    : "Tahun"}
-            </Button>
-          ))}
-        </div>
-      </div>
+        {/* Unified Filter Bar */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Period tabs */}
+            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-full border">
+              {(["today", "month", "year", "all"] as const).map((m) => (
+                <Button
+                  key={m}
+                  variant={viewMode === m ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => {
+                    setViewMode(m);
+                    setDateRange(undefined);
+                  }}
+                  className={cn(
+                    "rounded-full h-7 px-3 text-xs font-medium",
+                    viewMode === m && "shadow-sm",
+                  )}
+                >
+                  {m === "today"
+                    ? "Hari Ini"
+                    : m === "all"
+                      ? "Semua"
+                      : m === "month"
+                        ? "Bulan"
+                        : "Tahun"}
+                </Button>
+              ))}
+            </div>
 
-      {(viewMode === "month" || viewMode === "year") && (
-        <Card className="premium-card bg-muted/10 border-none shadow-none">
-          <CardContent className="p-4 flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Periode:</span>
+            {/* Divider */}
+            <div className="h-5 w-px bg-border hidden sm:block" />
+
+            {/* Date range picker */}
+            <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={viewMode === "custom" ? "default" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "h-7 gap-1.5 rounded-full text-xs font-medium px-3",
+                    viewMode === "custom"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-white hover:bg-muted/50",
+                  )}
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  {viewMode === "custom" && dateRange?.from ? (
+                    <span>
+                      {dateRange.from.toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                      {dateRange.to &&
+                      dateRange.to.getTime() !== dateRange.from.getTime()
+                        ? ` – ${dateRange.to.toLocaleDateString("id-ID", {
+                            day: "numeric",
+                            month: "short",
+                          })}`
+                        : ""}
+                    </span>
+                  ) : (
+                    <span>Pilih Tanggal</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={(range) => {
+                    setDateRange(range);
+                    if (range?.from) {
+                      setViewMode("custom");
+                    }
+                    if (range?.from && range?.to) {
+                      setTimeout(() => setIsDatePickerOpen(false), 300);
+                    }
+                  }}
+                  numberOfMonths={1}
+                  disabled={{ after: new Date() }}
+                  defaultMonth={dateRange?.from || new Date()}
+                />
+              </PopoverContent>
+            </Popover>
+            {viewMode === "custom" && dateRange?.from && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  setDateRange(undefined);
+                  setViewMode("today");
+                }}
+              >
+                <X className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
+
+          {/* Month/Year selector - shown inline when Bulan or Tahun is active */}
+          {(viewMode === "month" || viewMode === "year") && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground text-xs">Periode:</span>
               {viewMode === "month" && (
                 <select
                   value={filterMonth}
                   onChange={(e) => setFilterMonth(parseInt(e.target.value))}
-                  className="bg-white border rounded-md px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  className="bg-white border rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   {[
-                    "Januari",
-                    "Februari",
-                    "Maret",
-                    "April",
+                    "Jan",
+                    "Feb",
+                    "Mar",
+                    "Apr",
                     "Mei",
-                    "Juni",
-                    "Juli",
-                    "Agustus",
-                    "September",
-                    "Oktober",
-                    "November",
-                    "Desember",
+                    "Jun",
+                    "Jul",
+                    "Agu",
+                    "Sep",
+                    "Okt",
+                    "Nov",
+                    "Des",
                   ].map((m, i) => (
                     <option key={m} value={i}>
                       {m}
@@ -567,7 +840,7 @@ const Sales = () => {
               <select
                 value={filterYear}
                 onChange={(e) => setFilterYear(parseInt(e.target.value))}
-                className="bg-white border rounded-md px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                className="bg-white border rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-primary/20"
               >
                 {Array.from({ length: 5 }, (_, i) => 2026 - i).map((y) => (
                   <option key={y} value={y}>
@@ -576,16 +849,9 @@ const Sales = () => {
                 ))}
               </select>
             </div>
-            <div className="h-4 w-px bg-border sm:block hidden" />
-            <p className="text-xs text-muted-foreground italic">
-              Menampilkan data untuk{" "}
-              {viewMode === "month"
-                ? `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][filterMonth]} ${filterYear}`
-                : `Tahun ${filterYear}`}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatsCard
@@ -614,7 +880,7 @@ const Sales = () => {
           title="Total Transaksi"
           value={displayTransactionCount}
           numericValue={displayTransactionCount}
-          icon={Calendar}
+          icon={CalendarIcon}
           iconClassName="bg-success/10 text-success"
         />
       </div>
@@ -697,6 +963,59 @@ const Sales = () => {
               </div>
             </div>
 
+            {/* Tanggal Transaksi (Feature 1) */}
+            <div className="space-y-2">
+              <Label>Tanggal Transaksi</Label>
+              <Popover
+                open={isSaleDatePickerOpen}
+                onOpenChange={setIsSaleDatePickerOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full h-11 justify-start text-left font-normal bg-white",
+                      saleDate.toDateString() !== new Date().toDateString() &&
+                        "border-primary text-primary font-medium",
+                    )}
+                  >
+                    <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
+                    {saleDate.toLocaleDateString("id-ID", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={saleDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        setSaleDate(date);
+                        setIsSaleDatePickerOpen(false);
+                      }
+                    }}
+                    disabled={{ after: new Date() }}
+                    defaultMonth={saleDate}
+                  />
+                </PopoverContent>
+              </Popover>
+              {saleDate.toDateString() !== new Date().toDateString() && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  ⚠️ Transaksi akan dicatat untuk tanggal{" "}
+                  <strong>
+                    {saleDate.toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                    })}
+                  </strong>
+                </p>
+              )}
+            </div>
+
             {selectedProduct && (
               <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
                 <div className="flex items-center justify-between">
@@ -753,34 +1072,68 @@ const Sales = () => {
                 baris ditemukan (Hal {currentPage} dari {totalPages || 1})
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-48">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Cari produk..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9 text-sm bg-muted/50 border-none focus-visible:ring-1"
-                />
+            <div className="flex flex-col gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full">
+                <div className="relative flex-1 sm:w-48">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Cari produk..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 text-sm bg-muted/50 border-none focus-visible:ring-1"
+                  />
+                </div>
+                <div className="flex items-center bg-muted/50 p-1 rounded-lg border h-9 shrink-0 gap-x-1">
+                  <Button
+                    variant={displayMode === "detail" ? "default" : "ghost"}
+                    size="xs"
+                    onClick={() => {
+                      setDisplayMode("detail");
+                      setRecapProductFilter("all");
+                    }}
+                    className="px-2"
+                  >
+                    Detail
+                  </Button>
+                  <Button
+                    variant={displayMode === "summary" ? "default" : "ghost"}
+                    size="xs"
+                    onClick={() => setDisplayMode("summary")}
+                    className="px-2"
+                  >
+                    Rekap
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center bg-muted/50 p-1 rounded-lg border h-9 shrink-0 gap-x-1">
-                <Button
-                  variant={displayMode === "detail" ? "default" : "ghost"}
-                  size="xs"
-                  onClick={() => setDisplayMode("detail")}
-                  className="px-2"
-                >
-                  Detail
-                </Button>
-                <Button
-                  variant={displayMode === "summary" ? "default" : "ghost"}
-                  size="xs"
-                  onClick={() => setDisplayMode("summary")}
-                  className="px-2"
-                >
-                  Rekap
-                </Button>
-              </div>
+              {/* Product filter for Rekap mode (Feature 3) */}
+              {displayMode === "summary" && (
+                <div className="flex items-center gap-2">
+                  <ListFilter className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <Select
+                    value={recapProductFilter}
+                    onValueChange={setRecapProductFilter}
+                  >
+                    <SelectTrigger className="h-8 text-xs bg-white w-full sm:w-48">
+                      <SelectValue placeholder="Filter produk..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Produk</SelectItem>
+                      {/* Unique product names from current sales data */}
+                      {[
+                        ...new Set(
+                          sales.map((s) => s.productName).filter(Boolean),
+                        ),
+                      ]
+                        .sort()
+                        .map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -902,7 +1255,39 @@ const Sales = () => {
                               )}
                             >
                               <TableCell className="text-xs text-muted-foreground py-3">
-                                {formatDate(sale.date)}
+                                {displayMode === "detail" &&
+                                !(sale as any).isSummary ? (
+                                  <Popover
+                                    open={editingDateId === sale.id}
+                                    onOpenChange={(open) =>
+                                      setEditingDateId(open ? sale.id : null)
+                                    }
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <div className="flex items-center gap-1.5 cursor-pointer hover:bg-muted/50 p-1 -m-1 rounded-md transition-colors group/date">
+                                        <span>{formatDate(sale.date)}</span>
+                                        <Edit2 className="w-3 h-3 text-muted-foreground opacity-0 group-hover/date:opacity-100 transition-opacity" />
+                                      </div>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-auto p-0"
+                                      align="start"
+                                    >
+                                      <Calendar
+                                        mode="single"
+                                        selected={new Date(sale.date)}
+                                        onSelect={(date) => {
+                                          if (date)
+                                            handleUpdateDate(sale.id, date);
+                                        }}
+                                        disabled={{ after: new Date() }}
+                                        defaultMonth={new Date(sale.date)}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                ) : (
+                                  formatDate(sale.date)
+                                )}
                               </TableCell>
                               <TableCell className="text-sm py-3">
                                 {displayMode === "detail" ? (
@@ -956,16 +1341,31 @@ const Sales = () => {
                                 {displayMode === "detail" ? (
                                   <input
                                     type="number"
-                                    className="w-12 text-center bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none transition-colors"
-                                    value={sale.quantity}
+                                    min={1}
+                                    className="w-14 text-center bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={
+                                      editingQtyMap[sale.id] !== undefined
+                                        ? editingQtyMap[sale.id]
+                                        : sale.quantity
+                                    }
                                     onChange={(e) => {
-                                      const val = Number(e.target.value);
-                                      if (val > 0)
-                                        handleUpdateSale(
-                                          sale.id,
-                                          "quantity",
-                                          val,
-                                        );
+                                      setEditingQtyMap((prev) => ({
+                                        ...prev,
+                                        [sale.id]: e.target.value,
+                                      }));
+                                    }}
+                                    onBlur={() => commitQtyEdit(sale.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.currentTarget.blur();
+                                      }
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.select();
+                                      setEditingQtyMap((prev) => ({
+                                        ...prev,
+                                        [sale.id]: String(sale.quantity),
+                                      }));
                                     }}
                                   />
                                 ) : (
