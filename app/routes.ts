@@ -14,6 +14,7 @@ export default [
     route("/notes", "routes/notes-menu.tsx"),
     route("/sales", "routes/sales.tsx"),
     route("/stock", "routes/stock.tsx"),
+    route("/settings", "routes/settings.tsx"),
   ]),
 
   route("/login", "routes/login.tsx"),

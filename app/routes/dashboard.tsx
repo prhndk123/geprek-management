@@ -402,7 +402,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              <Link to="/autopost">
+              <Link to="/settings">
                 <Button className="w-full" variant="outline">
                   Kelola Auto Post
                 </Button>
@@ -509,7 +509,7 @@ const Dashboard = () => {
                 Status Koneksi
               </p>
               <div className="flex items-center gap-2">
-                <StatusDot status={true} size="sm" />
+                <StatusDot status="RUNNING" size="sm" />
                 <span className="text-sm font-medium text-success">
                   Terhubung
                 </span>

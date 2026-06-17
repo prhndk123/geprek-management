@@ -5,6 +5,7 @@ import {
   StickyNote,
   ShoppingCart,
   Package,
+  Settings,
   LogOut,
   LucideIcon,
 } from "lucide-react";
@@ -24,9 +25,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/notes", label: "Catatan", icon: StickyNote },
+  // { path: "/notes", label: "Catatan", icon: StickyNote }, // Hidden — fitur belum dipakai
   { path: "/sales", label: "Penjualan", icon: ShoppingCart },
   { path: "/stock", label: "Stok", icon: Package },
+  { path: "/settings", label: "Pengaturan", icon: Settings },
 ];
 
 interface NavContentProps {

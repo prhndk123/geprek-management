@@ -112,11 +112,54 @@ export const productsAPI = {
       "/api/data/products",
       {
         params: {
+          pageSize: 100,
           sortBy: "`price` desc",
         },
       },
     );
     return data.filter((p) => p.isActive !== false).map(mapProduct);
+  },
+  async create(payload: Partial<BackendlessProduct>): Promise<Product> {
+    if (isOffline()) {
+      return {} as Product;
+    }
+    try {
+      const { data } = await axiosInstance.post<BackendlessProduct>(
+        "/api/data/products",
+        payload,
+      );
+      return mapProduct(data);
+    } catch (err: any) {
+      // Log the actual Backendless error message for debugging
+      const errBody = err?.response?.data;
+      console.error(
+        "[productsAPI.create] 400 error body:",
+        JSON.stringify(errBody),
+        "| payload:",
+        JSON.stringify(payload),
+      );
+
+      // If duplicate code (1155), the product already exists — return a stub
+      // so the caller can treat it as "already created"
+      if (errBody?.code === 1155) {
+        console.warn(
+          `[productsAPI.create] Product already exists (duplicate code: ${errBody?.errorData?.duplicateValue}). Skipping.`,
+        );
+        return { id: "duplicate", name: payload.name ?? "", price: payload.price ?? 0, code: payload.code ?? "", useChicken: payload.useChicken ?? false } as Product;
+      }
+
+      throw err;
+    }
+  },
+  async update(id: string, payload: Partial<BackendlessProduct>): Promise<Product> {
+    if (isOffline()) {
+      return {} as Product;
+    }
+    const { data } = await axiosInstance.put<BackendlessProduct>(
+      `/api/data/products/${id}`,
+      payload,
+    );
+    return mapProduct(data);
   },
 };
 
@@ -162,6 +205,7 @@ export const salesAPI = {
       allSales = [...allSales, ...batch];
       if (batch.length < 100) break;
       offset += 100;
+      if (offset >= 10000) break; // B9 fix: prevent infinite loop
     }
     return allSales;
   },
@@ -257,8 +301,8 @@ export const salesAPI = {
       body.product = { objectId: payload.productId };
     }
     if (payload.productName) body.productName = payload.productName;
-    if (payload.price) body.price = payload.price;
-    if (payload.quantity) body.quantity = payload.quantity;
+    if (payload.price !== undefined) body.price = payload.price; // B1 fix
+    if (payload.quantity !== undefined) body.quantity = payload.quantity; // B1 fix
     // Support updating transactionDate (for date editing feature)
     if (payload.transactionDate !== undefined) {
       body.transactionDate = payload.transactionDate;
@@ -266,6 +310,14 @@ export const salesAPI = {
 
     if (payload.price !== undefined && payload.quantity !== undefined) {
       body.total = payload.price * payload.quantity;
+    } else if (payload.price !== undefined || payload.quantity !== undefined) {
+      // B2 fix: recalculate total if only one field changes
+      const current = useStore.getState().sales.find((s) => s.id === id);
+      if (current) {
+        const p = payload.price !== undefined ? payload.price : current.price;
+        const q = payload.quantity !== undefined ? payload.quantity : current.quantity;
+        body.total = p * q;
+      }
     }
 
     try {

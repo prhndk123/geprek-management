@@ -136,7 +136,7 @@ const useStore = create<StoreState>()(
       // Sales state
       addSale: (sale: Omit<Sale, "id" | "date" | "total">) => {
         const newSale: Sale = {
-          id: String(Date.now()),
+          id: crypto.randomUUID(),
           ...sale,
           date: new Date().toISOString(),
           total: sale.price * sale.quantity,

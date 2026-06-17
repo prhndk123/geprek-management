@@ -72,7 +72,7 @@ import {
 } from "~/components/ui/popover";
 import { Calendar } from "~/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
-import { Check, Edit2 } from "lucide-react";
+import { Check, Edit2, CheckCircle2, ChevronDown } from "lucide-react";
 
 const Sales = () => {
   const {
@@ -89,6 +89,7 @@ const Sales = () => {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [quantity, setQuantity] = useState<number | "">(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [savedRecently, setSavedRecently] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Tanggal transaksi manual (Feature 1)
@@ -351,14 +352,7 @@ const Sales = () => {
   const processedSales = useMemo(() => {
     let filtered = [...sales];
 
-    // Text search filter
-    if (searchQuery) {
-      filtered = filtered.filter((sale) =>
-        (sale.productName || "")
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase()),
-      );
-    }
+    // Text search filter handled server-side (B10 fix)
 
     // Product filter for Rekap mode (Feature 3)
     if (displayMode === "summary" && recapProductFilter !== "all") {
@@ -497,6 +491,8 @@ const Sales = () => {
       setSelectedProduct("");
       setQuantity(1);
       setSaleDate(new Date()); // Reset tanggal ke hari ini setelah simpan
+      setSavedRecently(true);
+      setTimeout(() => setSavedRecently(false), 2000);
     } catch (e) {
       toast.error("Gagal menyimpan penjualan");
     } finally {
@@ -521,6 +517,7 @@ const Sales = () => {
     );
     const txTimestamp = updatedDate.getTime();
 
+    const snapshot = [...sales]; // B3 fix
     // Optimistic update - immutable
     const updatedSales = sales.map((s) =>
       s.id === id ? { ...s, date: updatedDate.toISOString() } : s,
@@ -532,7 +529,7 @@ const Sales = () => {
       await salesAPI.update(id, { transactionDate: txTimestamp } as any);
       toast.success("Tanggal berhasil diupdate");
     } catch (e) {
-      setSales(sales); // Revert on error
+      setSales(snapshot); // B3 fix
       toast.error("Gagal update tanggal");
     }
   };
@@ -546,6 +543,7 @@ const Sales = () => {
     if (!originalSale) return;
 
     // Optimistic update
+    const snapshot = [...sales]; // B6 fix
     const updatedSales = sales.map((s) => {
       if (s.id === id) {
         if (field === "productId") {
@@ -592,10 +590,8 @@ const Sales = () => {
 
       // Adjust stock if qty changed on a useChicken product
       if (field === "quantity") {
-        // Fallback: cari by ID dulu, kalau tidak ketemu cari by name
-        const product =
-          products.find((p) => p.id === originalSale.productId) ||
-          products.find((p) => p.name === originalSale.productName);
+        // Strictly search by ID to avoid ambiguity (B5 fix)
+        const product = products.find((p) => p.id === originalSale.productId);
         if (product?.useChicken) {
           const oldQty = originalSale.quantity;
           const newQty = Number(value);
@@ -616,7 +612,7 @@ const Sales = () => {
 
       toast.success("Data berhasil diupdate");
     } catch (e) {
-      setSales(sales); // Revert
+      setSales(snapshot); // B6 fix
       toast.error("Gagal update data");
     }
   };
@@ -899,26 +895,65 @@ const Sales = () => {
           <CardContent className="space-y-5">
             <div className="space-y-2">
               <Label>Pilih Produk</Label>
-              <Select
-                value={selectedProduct}
-                onValueChange={setSelectedProduct}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="Pilih produk..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {products.map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      <div className="flex items-center justify-between w-full pr-2">
-                        <span>{product.name}</span>
-                        <span className="text-xs font-semibold text-primary ml-2">
-                          {formatRupiah(product.price)}
-                        </span>
+              {/* Visual button grid for fast product selection */}
+              {(() => {
+                // Group products into categories by name pattern
+                const paket = products.filter(p => p.name.toLowerCase().startsWith('paket'));
+                const ayam = products.filter(p => p.name.toLowerCase().startsWith('ayam'));
+                const addon = products.filter(p =>
+                  !p.name.toLowerCase().startsWith('paket') &&
+                  !p.name.toLowerCase().startsWith('ayam')
+                );
+                const renderGroup = (label: string, items: typeof products, color: string) => {
+                  if (items.length === 0) return null;
+                  return (
+                    <div className="space-y-1.5" key={label}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-0.5">{label}</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {items.map(product => {
+                          const isSelected = selectedProduct === product.id;
+                          return (
+                            <button
+                              key={product.id}
+                              type="button"
+                              onClick={() => setSelectedProduct(isSelected ? '' : product.id)}
+                              className={[
+                                'flex flex-col items-start px-2.5 py-2 rounded-lg border text-left transition-all duration-150 active:scale-95',
+                                isSelected
+                                  ? 'border-primary bg-primary text-primary-foreground shadow-md'
+                                  : 'border-border bg-white hover:border-primary/50 hover:bg-primary/5'
+                              ].join(' ')}
+                            >
+                              <span className={['text-[11px] font-semibold leading-tight', isSelected ? 'text-primary-foreground' : 'text-foreground'].join(' ')}>
+                                {product.name.replace(/^(Paket |Ayam )/i, '')}
+                              </span>
+                              <span className={['text-[10px] font-bold mt-0.5', isSelected ? 'text-primary-foreground/80' : 'text-primary'].join(' ')}>
+                                {formatRupiah(product.price)}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    </div>
+                  );
+                };
+                return (
+                  <div className="space-y-3 p-3 bg-muted/30 rounded-xl border">
+                    {renderGroup('🍱 Paket', paket, 'primary')}
+                    {renderGroup('🍗 Ayam Only', ayam, 'secondary')}
+                    {renderGroup('➕ Lainnya / Addon', addon, 'muted')}
+                    {selectedProduct && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProduct('')}
+                        className="w-full text-[10px] text-muted-foreground/60 hover:text-destructive flex items-center justify-center gap-1 mt-1 py-1"
+                      >
+                        <X className="w-3 h-3" /> Batal pilih
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="space-y-2">
@@ -1041,14 +1076,24 @@ const Sales = () => {
             )}
 
             <Button
-              className="w-full h-12 bg-gradient-primary hover:scale-[1.02] transition-transform text-primary-foreground font-bold shadow-glow"
+              className={[
+                'w-full h-12 transition-all duration-300 font-bold shadow-glow',
+                savedRecently
+                  ? 'bg-green-500 hover:bg-green-500 text-white cursor-default scale-100'
+                  : 'bg-gradient-primary hover:scale-[1.02] text-primary-foreground',
+              ].join(' ')}
               onClick={handleAddSale}
-              disabled={!selectedProduct || isLoading}
+              disabled={!selectedProduct || isLoading || savedRecently}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                   Menyimpan...
+                </>
+              ) : savedRecently ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 mr-2" />
+                  Tersimpan!
                 </>
               ) : (
                 <>
