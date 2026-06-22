@@ -906,11 +906,22 @@ const Sales = () => {
                 );
                 const renderGroup = (label: string, items: typeof products, color: string) => {
                   if (items.length === 0) return null;
+
+                  // Explicitly sort items to ensure Dada > Paha Atas > Sayap > Paha Bawah
+                  const sortOrder = ['dada', 'paha atas', 'sayap', 'paha bawah'];
+                  const getSortIndex = (name: string) => {
+                    const lower = name.toLowerCase();
+                    const index = sortOrder.findIndex(key => lower.includes(key));
+                    return index === -1 ? 999 : index;
+                  };
+                  
+                  const sortedItems = [...items].sort((a, b) => getSortIndex(a.name) - getSortIndex(b.name));
+
                   return (
                     <div className="space-y-1.5" key={label}>
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-0.5">{label}</p>
                       <div className="grid grid-cols-2 gap-1.5">
-                        {items.map(product => {
+                        {sortedItems.map(product => {
                           const isSelected = selectedProduct === product.id;
                           return (
                             <button

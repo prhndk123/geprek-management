@@ -4,12 +4,12 @@ import { Toaster } from "~/components/ui/sonner";
 import { useAuthStore } from "~/modules/auth/auth.store";
 import { useOfflineQueue } from "~/services/offlineQueue";
 import { useEffect, useState } from "react";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { WifiOff, RefreshCw, X } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 export const Layout = () => {
   const { isAuthenticated, hasHydrated } = useAuthStore();
-  const { queue, processQueue, isProcessing } = useOfflineQueue();
+  const { queue, processQueue, isProcessing, clearQueue } = useOfflineQueue();
   const [isOffline, setIsOffline] = useState(false); // Local state for UI only
 
   // Listen to network status
@@ -68,11 +68,32 @@ export const Layout = () => {
               <RefreshCw
                 className={cn("w-4 h-4", isProcessing && "animate-spin")}
               />
-              <span>
+              <span className="flex-1">
                 {isProcessing
                   ? "Menyinkronkan data..."
                   : `${queue.length} data belum disinkronkan`}
               </span>
+              {!isProcessing && (
+                <div className="flex items-center gap-1 ml-2 border-l border-white/20 pl-2">
+                  <button 
+                    onClick={() => processQueue()}
+                    className="p-1 hover:bg-white/20 rounded text-xs font-bold transition-colors"
+                  >
+                    Coba Lagi
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if(window.confirm('Hapus antrean tersangkut? Data yang belum sinkron akan hilang.')){
+                         clearQueue();
+                      }
+                    }}
+                    className="p-1 hover:bg-white/20 rounded ml-1 transition-colors"
+                    title="Hapus Antrean"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
