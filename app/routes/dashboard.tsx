@@ -20,6 +20,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { StatsCard } from "~/components/stats-card";
 import { StatusBadge, StatusDot } from "~/components/status-badge";
+import { SalesChart } from "~/components/sales-chart";
 import useStore, {
   formatRupiah,
   type Sale,
@@ -27,7 +28,7 @@ import useStore, {
 } from "~/store/useStore";
 import { Link } from "react-router";
 import { useAuthStore } from "~/modules/auth/auth.store";
-import { salesAPI, stockAPI } from "~/services/api";
+import { salesAPI, stockAPI, productsAPI } from "~/services/api";
 
 // Helper untuk membuat filter where clause berdasarkan range waktu
 const createDateFilter = (
@@ -81,6 +82,7 @@ const Dashboard = () => {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [currentSales, setCurrentSales] = useState<Sale[]>([]);
 
   // Stats state - initialized with zeros
   const [stats, setStats] = useState({
@@ -119,14 +121,19 @@ const Dashboard = () => {
         // Create filter for sales query
         const whereClause = createDateFilter(viewMode, filterMonth, filterYear);
 
-        // Fetch filtered sales and stock in parallel
-        const [salesData, stockData] = await Promise.all([
+        // Fetch filtered sales, stock and products in parallel
+        const [salesData, stockData, productsData] = await Promise.all([
           salesAPI.listAll(whereClause),
           stockAPI.get(),
+          productsAPI.list()
         ]);
+        
+        useStore.getState().setProducts(productsData);
 
         // Calculate stats from fetched sales
         const calculatedStats = calculateStatsFromSales(salesData);
+        
+        setCurrentSales(salesData);
 
         setStats({
           todaySales: calculatedStats.todaySales,
@@ -310,7 +317,7 @@ const Dashboard = () => {
 
       {/* Stats Grid - Balanced Layout */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-        {/* Top Row: 3 cards, each col-span-2 */}
+        {/* Top Row: 2 cards, each col-span-3 */}
         <StatsCard
           title="Stok Ayam Matang"
           value={`${stats.cookedChicken} ekor`}
@@ -319,7 +326,7 @@ const Dashboard = () => {
           subtitle="Tersedia untuk dijual"
           icon={Flame}
           iconClassName="bg-secondary/10 text-secondary"
-          className="lg:col-span-2"
+          className="lg:col-span-3"
         />
 
         <StatsCard
@@ -335,18 +342,7 @@ const Dashboard = () => {
               ? "bg-destructive/10 text-destructive"
               : "bg-warning/10",
           )}
-          className="lg:col-span-2"
-        />
-
-        <StatsCard
-          title="Rencana Goreng"
-          value={`${stats.friedPlanning} ekor`}
-          numericValue={stats.friedPlanning}
-          formatter={(val) => `${val} ekor`}
-          subtitle="Ayam siap digoreng"
-          icon={Drumstick}
-          iconClassName="bg-accent/10 text-accent-foreground"
-          className="lg:col-span-2"
+          className="lg:col-span-3"
         />
 
         {/* Bottom Row: 2 cards, each col-span-3 for symmetry */}
@@ -373,73 +369,17 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* Quick Actions & Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Auto Post Status */}
-        <Card className="premium-card">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg font-heading flex items-center gap-2">
-                <Send className="w-5 h-5 text-primary" />
-                Status Auto Post
-              </CardTitle>
-              <StatusBadge status={autoPostStatus} />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <StatusDot status={autoPostStatus} size="md" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    Telegram Bot
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {autoPostStatus === "RUNNING"
-                      ? "Berjalan dan mengirim postingan"
-                      : "Bot tidak aktif"}
-                  </p>
-                </div>
-              </div>
+      {/* Sales Chart Section */}
+      <SalesChart 
+        sales={currentSales} 
+        viewMode={viewMode} 
+        month={filterMonth} 
+        year={filterYear} 
+      />
 
-              <Link to="/settings">
-                <Button className="w-full" variant="outline">
-                  Kelola Auto Post
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Sales */}
-        <Card className="premium-card">
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5 text-primary" />
-              Penjualan Cepat
-            </CardTitle>
-            <CardDescription>Akses cepat ke halaman penjualan</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                <span className="text-sm text-foreground">Hari ini</span>
-                <span className="text-sm font-semibold text-primary">
-                  {formatRupiah(stats.todaySales)}
-                </span>
-              </div>
-
-              <Link to="/sales">
-                <Button className="w-full bg-gradient-primary text-primary-foreground hover:opacity-90">
-                  Catat Penjualan
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Stock Overview */}
-        <Card className="premium-card">
+        <Card className="premium-card lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-lg font-heading flex items-center gap-2">
               <Package className="w-5 h-5 text-primary" />
@@ -467,15 +407,8 @@ const Dashboard = () => {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-accent/5">
-                <span className="text-sm text-foreground">Rencana Goreng</span>
-                <span className="text-sm font-semibold text-accent-foreground">
-                  {stats.friedPlanning} ekor
-                </span>
-              </div>
-
               <Link to="/stock">
-                <Button className="w-full" variant="outline">
+                <Button className="w-full mt-2" variant="outline">
                   Kelola Stok
                 </Button>
               </Link>
@@ -483,41 +416,6 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
-
-      {/* Bot Info Summary */}
-      <Card className="premium-card">
-        <CardHeader>
-          <CardTitle className="text-lg font-heading flex items-center gap-2">
-            <Activity className="w-5 h-5 text-primary" />
-            Informasi Bot
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-muted/50">
-              <p className="text-xs text-muted-foreground mb-1">Platform</p>
-              <p className="text-sm font-medium text-foreground">Telegram</p>
-            </div>
-            <div className="p-4 rounded-lg bg-muted/50">
-              <p className="text-xs text-muted-foreground mb-1">Backend</p>
-              <p className="text-sm font-medium text-foreground">
-                FastAPI + Telethon
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-muted/50">
-              <p className="text-xs text-muted-foreground mb-1">
-                Status Koneksi
-              </p>
-              <div className="flex items-center gap-2">
-                <StatusDot status="RUNNING" size="sm" />
-                <span className="text-sm font-medium text-success">
-                  Terhubung
-                </span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };
