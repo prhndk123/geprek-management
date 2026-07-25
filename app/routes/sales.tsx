@@ -588,6 +588,28 @@ const Sales = () => {
 
       await salesAPI.update(id, payload);
 
+      // Adjust stock if product changed
+      if (field === "productId") {
+        const oldProduct = products.find((p) => p.id === originalSale.productId);
+        const newProduct = products.find((p) => p.id === value);
+        
+        let delta = 0;
+        if (oldProduct?.useChicken) delta += originalSale.quantity; // returning stock
+        if (newProduct?.useChicken) delta -= originalSale.quantity; // consuming stock
+        
+        if (delta !== 0) {
+          const { stock: currentStock, setStock } = useStore.getState();
+          try {
+            const updatedStock = await stockAPI.update({
+              cookedChicken: Math.max(0, currentStock.cookedChicken + delta),
+            });
+            setStock(updatedStock);
+          } catch (e) {
+            toast.error("Gagal update stok setelah ubah produk");
+          }
+        }
+      }
+
       // Adjust stock if qty changed on a useChicken product
       if (field === "quantity") {
         // Strictly search by ID to avoid ambiguity (B5 fix)

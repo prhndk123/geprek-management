@@ -8,7 +8,9 @@ import useStore, {
 } from "~/store/useStore";
 import { useOfflineQueue } from "./offlineQueue";
 
-const isOffline = () => !navigator.onLine;
+// navigator.onLine tidak selalu akurat di iOS (bisa true meski koneksi lemah)
+// Timeout di axiosInstance akan jadi pengaman kedua untuk request yang hang
+const isOffline = () => typeof navigator !== "undefined" && !navigator.onLine;
 
 /**
  * Service layer untuk komunikasi dengan Backendless.
@@ -181,13 +183,16 @@ export const salesAPI = {
       return useStore.getState().sales || [];
     }
 
+    const baseWhere = "isDeleted = false OR isDeleted is null";
+    const finalWhere = where ? `(${where}) AND (${baseWhere})` : baseWhere;
+
     const { data } = await axiosInstance.get<BackendlessSale[]>(
       "/api/data/Sales",
       {
         params: {
           pageSize,
           offset,
-          where,
+          where: finalWhere,
           sortBy: "transactionDate desc, created desc",
         },
       },
@@ -212,8 +217,11 @@ export const salesAPI = {
 
   async count(where?: string): Promise<number> {
     if (isOffline()) return 0;
+    const baseWhere = "isDeleted = false OR isDeleted is null";
+    const finalWhere = where ? `(${where}) AND (${baseWhere})` : baseWhere;
+
     const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
-      params: { where },
+      params: { where: finalWhere },
     });
     return data;
   },
@@ -262,8 +270,13 @@ export const salesAPI = {
       );
       return mapSale(data);
     } catch (error: any) {
-      // If network error, fallback to offline queue
-      if (error.code === "ERR_NETWORK" || !error.response) {
+      // Fallback ke offline queue jika network error ATAU timeout (iOS sering timeout di koneksi lemah)
+      const isNetworkOrTimeout =
+        error.code === "ERR_NETWORK" ||
+        error.code === "ECONNABORTED" ||
+        error.code === "ETIMEDOUT" ||
+        !error.response;
+      if (isNetworkOrTimeout) {
         const tempId = `temp-${txDate}`;
         const tempSale: Sale = {
           id: tempId,
@@ -343,7 +356,7 @@ export const salesAPI = {
       // Ideally addToQueue DELETE_SALE
       return;
     }
-    await axiosInstance.delete(`/api/data/Sales/${id}`);
+    await axiosInstance.put(`/api/data/Sales/${id}`, { isDeleted: true });
   },
 };
 

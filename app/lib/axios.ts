@@ -18,6 +18,7 @@ const BASE_URL =
 
 export const axiosInstance = axios.create({
   baseURL: BASE_URL,
+  timeout: 10000, // 10 detik — cegah request hang di iOS saat koneksi lemah/offline
   headers: {
     "Content-Type": "application/json",
   },
@@ -38,9 +39,11 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem("accessToken");
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("accessToken");
+        if (window.location.pathname !== "/login") {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(error);
