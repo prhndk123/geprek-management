@@ -183,21 +183,40 @@ export const salesAPI = {
       return useStore.getState().sales || [];
     }
 
-    const baseWhere = "isDeleted = false OR isDeleted is null";
-    const finalWhere = where ? `(${where}) AND (${baseWhere})` : baseWhere;
+    // Soft-delete filter: field isDeleted mungkin belum ada di Backendless schema
+    // (field dibuat otomatis saat record pertama di-soft-delete).
+    // Jika query 400, fallback tanpa filter isDeleted.
+    const buildParams = (includeDeleteFilter: boolean) => {
+      let finalWhere = where;
+      if (includeDeleteFilter) {
+        const baseWhere = "isDeleted != true";
+        finalWhere = where ? `(${where}) AND (${baseWhere})` : baseWhere;
+      }
+      return {
+        pageSize,
+        offset,
+        where: finalWhere,
+        sortBy: "transactionDate desc, created desc",
+      };
+    };
 
-    const { data } = await axiosInstance.get<BackendlessSale[]>(
-      "/api/data/Sales",
-      {
-        params: {
-          pageSize,
-          offset,
-          where: finalWhere,
-          sortBy: "transactionDate desc, created desc",
-        },
-      },
-    );
-    return data.map(mapSale);
+    try {
+      const { data } = await axiosInstance.get<BackendlessSale[]>(
+        "/api/data/Sales",
+        { params: buildParams(true) },
+      );
+      return data.map(mapSale);
+    } catch (err: any) {
+      // 400 = field isDeleted belum ada di schema, retry tanpa filter
+      if (err?.response?.status === 400) {
+        const { data } = await axiosInstance.get<BackendlessSale[]>(
+          "/api/data/Sales",
+          { params: buildParams(false) },
+        );
+        return data.map(mapSale);
+      }
+      throw err;
+    }
   },
 
   async listAll(where?: string): Promise<Sale[]> {
@@ -217,13 +236,27 @@ export const salesAPI = {
 
   async count(where?: string): Promise<number> {
     if (isOffline()) return 0;
-    const baseWhere = "isDeleted = false OR isDeleted is null";
-    const finalWhere = where ? `(${where}) AND (${baseWhere})` : baseWhere;
 
-    const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
-      params: { where: finalWhere },
-    });
-    return data;
+    const buildWhere = (includeDeleteFilter: boolean) => {
+      if (!includeDeleteFilter) return where;
+      const baseWhere = "isDeleted != true";
+      return where ? `(${where}) AND (${baseWhere})` : baseWhere;
+    };
+
+    try {
+      const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
+        params: { where: buildWhere(true) },
+      });
+      return data;
+    } catch (err: any) {
+      if (err?.response?.status === 400) {
+        const { data } = await axiosInstance.get<number>("/api/data/Sales/count", {
+          params: { where: buildWhere(false) },
+        });
+        return data;
+      }
+      throw err;
+    }
   },
 
   async create(payload: CreateSaleDto): Promise<Sale> {

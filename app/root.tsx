@@ -50,7 +50,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <meta name="theme-color" content="#f97316" />
         <Meta />
-        <link rel="manifest" href="/manifest.webmanifest" />
         <Links />
       </head>
       <body>
